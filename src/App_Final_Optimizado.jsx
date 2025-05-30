@@ -1,0 +1,1 @@
+// Aquí irá el código optimizado final para App.js
