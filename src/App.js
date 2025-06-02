@@ -114,27 +114,34 @@ const calcularAcumulados = () => {
   };
 
   const mediosTodos = Array.from(new Set(Object.values(mediosPorNegocio).flat()));
-
 useEffect(() => {
   if (isLoggedIn) {
     cargarRegistros();
 
     const ahora = new Date();
     const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
+    if (inicio instanceof Date && !isNaN(inicio)) {
+      setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
+    } else {
+      console.warn("Fecha inválida (inicio del mes)");
+      setFiltroFechaDesde("");
+    }
 
-    // No seteamos filtroFechaHasta acá, lo hacemos en el siguiente useEffect
     setFiltroNegociosMulti(Object.keys(mediosPorNegocio));
     setFiltroMediosMulti(mediosTodos);
-        setMostrarDetalleGrafico(true); // <-- MOSTRAR GRÁFICO AL INICIAR
-
+    setMostrarDetalleGrafico(true);
   }
 }, [isLoggedIn]);
+
 useEffect(() => {
-  if (ultimaFechaGlobal) {
+  if (ultimaFechaGlobal instanceof Date && !isNaN(ultimaFechaGlobal)) {
     setFiltroFechaHasta(ultimaFechaGlobal.toISOString().split("T")[0]);
+  } else {
+    console.warn("Fecha inválida (última fecha global):", ultimaFechaGlobal);
+    setFiltroFechaHasta("");
   }
 }, [ultimaFechaGlobal]);
+
 useEffect(() => {
   if (
     filtroFechaDesde &&
@@ -153,6 +160,7 @@ useEffect(() => {
   filtroMediosMulti,
   registros
 ]);
+
 
 
 
@@ -178,10 +186,21 @@ const cargarRegistros = async () => {
 
   setUltimosDiasPorNegocio(ultimos);
   // Calcular la última fecha cargada entre todos los registros
-const todasLasFechas = data.map(r => {
-  const [dia, mes, anio] = r.fecha.split("/").map(Number);
-  return new Date(`${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`);
-});
+const todasLasFechas = data
+  .filter(r => r.fecha && r.fecha.includes("/"))
+  .map(r => {
+    const [dia, mes, anio] = r.fecha.split("/").map(Number);
+    return new Date(`${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`);
+  });
+
+if (todasLasFechas.length > 0) {
+  const ultimaFechaCargada = new Date(Math.max(...todasLasFechas));
+  setUltimaFechaGlobal(ultimaFechaCargada);
+} else {
+  setUltimaFechaGlobal(null); // o lo podés dejar sin setear
+}
+
+
 const ultimaFechaCargada = new Date(Math.max(...todasLasFechas));
 setUltimaFechaGlobal(ultimaFechaCargada);
 
@@ -675,19 +694,37 @@ return (
       <div style={{ marginTop: 10, marginBottom: 10 }}>
   <button
   onClick={() => {
-    const ahora = new Date();
-    const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    const fin = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
+    try {
+      const ahora = new Date();
+      const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+      const fin = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
 
-    setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
-    setFiltroFechaHasta(fin.toISOString().split("T")[0]);
+      if (inicio instanceof Date && !isNaN(inicio)) {
+        setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
+      } else {
+        console.warn("⚠️ Fecha de inicio inválida:", inicio);
+        setFiltroFechaDesde("");
+      }
 
-    calcularAcumulados();
-    calcularDetalleDiarioFiltrado(); // solo llamás a la función, no la declarás acá
+      if (fin instanceof Date && !isNaN(fin)) {
+        setFiltroFechaHasta(fin.toISOString().split("T")[0]);
+      } else {
+        console.warn("⚠️ Fecha de fin inválida:", fin);
+        setFiltroFechaHasta("");
+      }
+
+      calcularAcumulados();
+      calcularDetalleDiarioFiltrado();
+
+    } catch (error) {
+      console.error("🛑 Error al formatear fechas:", error);
+    }
   }}
+  style={estiloBoton("#007BFF", "white")}
 >
-  📅 Ver mes actual
+  📊 Ver acumulados del mes
 </button>
+
 
 
   <button
@@ -939,7 +976,7 @@ return (
                   ...formData
                 };
 
-                await addDoc(collection(db, "registros"), nuevoRegistro);
+await addDoc(collection(db, "registros"), nuevoRegistro);
                 setFormData({});
                 setNegocio("");
                 setFechaSeleccionada("");
