@@ -957,11 +957,7 @@ return (
 const [anio, mes, dia] = fechaSeleccionada.split("-");
 const fechaFormateada = `${dia}/${mes}/${anio}`;
 
-                const yaExiste = registros.some(r => r.fecha === fechaFormateada && r.negocio === negocio);
-                if (yaExiste) {
-                  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
-                  return;
-                }
+                
 
                 const totalDia = Object.entries(formData).reduce(
                     (sum, [, val]) => sum + parseInt(val || 0, 10),
@@ -988,18 +984,18 @@ await addDoc(collection(db, "registros"), nuevoRegistro);
           ) : (
             <>
               <button onClick={async () => {
-                const fecha = new Date(fechaSeleccionada);
-                const fechaFormateada = fecha.toLocaleDateString("es-AR");
+const [anio, mes, dia] = fechaSeleccionada.split("-");
+const fechaFormateada = `${dia}/${mes}/${anio}`;
 
-                const yaExiste = registros.some(r =>
-                  r.fecha === fechaFormateada &&
-                  r.negocio === negocio &&
-                  r.id !== idEnEdicion
-                );
-                if (yaExiste) {
-                  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
-                  return;
-                }
+const yaExiste = registros.some(r =>
+  r.fecha === fechaFormateada &&
+  r.negocio === negocio &&
+  r.id !== idEnEdicion
+);
+if (yaExiste) {
+  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
+  return;
+}
 
                 const totalDia = Object.entries(formData).reduce(
                   (sum, [, val]) => sum + parseInt(val || 0),
