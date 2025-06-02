@@ -323,26 +323,18 @@ const listaFiltrada = registrosFiltrados;
   setDetalleDiario(lista);
 };
 
-const eliminarRegistro = async (fecha, negocio) => {
-  const snapshot = await getDocs(collection(db, "registros"));
-  const docs = snapshot.docs.filter(doc =>
-    doc.data().fecha === fecha && doc.data().negocio === negocio
-  );
-
-  if (docs.length === 0) {
-    alert(`No se encontró el registro de ${negocio} para ${fecha}.`);
-    return;
-  }
-
-  const confirm = window.confirm(`¿Eliminar el registro de ${negocio} del ${fecha}?`);
+const eliminarRegistro = async (id) => {
+  const confirm = window.confirm("¿Eliminar este registro?");
   if (!confirm) return;
 
-  for (let docu of docs) {
-    await deleteDoc(doc(db, "registros", docu.id));
+  try {
+    await deleteDoc(doc(db, "registros", id));
+    alert("Registro eliminado.");
+    cargarRegistros(); // 🔁 Esto vuelve a cargar la lista
+  } catch (error) {
+    console.error("Error eliminando el documento:", error);
+    alert("❌ Hubo un error al eliminar.");
   }
-
-  alert("Registro eliminado.");
-  cargarRegistros();
 };
 const registrosOrdenados = () => {
   return [...registros].sort((a, b) => {
@@ -380,6 +372,26 @@ const colores = [
   "#9966FF", "#FF9F40", "#A0522D", "#008000",
   "#DC143C", "#00CED1", "#B8860B", "#2E8B57"
 ];
+const editarRegistroPorId = (id) => {
+  const registro = registros.find(r => r.id === id);
+  if (!registro) {
+    alert("No se encontró el registro.");
+    return;
+  }
+
+  setNegocio(registro.negocio);
+  const [d, m, a] = registro.fecha.split("/");
+  setFechaSeleccionada(`${a}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`);
+
+  const nuevoForm = {};
+  Object.entries(registro).forEach(([k, v]) => {
+    if (mediosTodos.includes(k)) nuevoForm[k] = v;
+  });
+
+  setFormData(nuevoForm);
+  setModoEdicion(true);
+  setIdEnEdicion(registro.id);
+};
 
 const exportarTablaAExcel = () => {
   const datosParaExcel = [];
@@ -1122,8 +1134,8 @@ if (yaExiste) {
             <strong>{formatoMoneda(r.totalDia)}</strong>
           </td>
           <td style={{ border: "1px solid #888", textAlign: "center" }}>
-            <button onClick={() => editarRegistro(r.fecha, r.negocio)}>Editar</button>{" "}
-            <button onClick={() => eliminarRegistro(r.fecha, r.negocio)}>Eliminar</button>
+            <button onClick={() => editarRegistroPorId(r.id)}>Editar</button>{" "}
+            <button onClick={() => eliminarRegistro(r.id)}>Eliminar</button>
           </td>
         </tr>
       ))}
