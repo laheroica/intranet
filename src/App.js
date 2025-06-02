@@ -954,8 +954,8 @@ return (
                   return;
                 }
 
-                const fecha = new Date(fechaSeleccionada);
-                const fechaFormateada = fecha.toLocaleDateString("es-AR");
+const [anio, mes, dia] = fechaSeleccionada.split("-");
+const fechaFormateada = `${dia}/${mes}/${anio}`;
 
                 const yaExiste = registros.some(r => r.fecha === fechaFormateada && r.negocio === negocio);
                 if (yaExiste) {
