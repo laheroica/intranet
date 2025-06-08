@@ -466,6 +466,58 @@ const estiloBoton = (bgColor, textColor) => ({
 });
 
 
+const generarEvolucionDiariaAcumulada = () => {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = ahora.getMonth(); // 0-indexed
+
+  const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", "Alquileres"];
+  const diasDelMes = new Date(anio, mes + 1, 0).getDate();
+
+  const fechas = Array.from({ length: diasDelMes }, (_, i) => {
+    const dia = String(i + 1).padStart(2, "0");
+    const mesStr = String(mes + 1).padStart(2, "0");
+    return `${dia}/${mesStr}/${anio}`;
+  });
+
+  const acumuladoPorNegocio = {};
+  negocios.forEach(n => {
+    acumuladoPorNegocio[n] = Array(diasDelMes).fill(0);
+  });
+
+  registros.forEach(r => {
+    const [d, m, y] = r.fecha.split("/").map(Number);
+    if (m === mes + 1 && y === anio && negocios.includes(r.negocio)) {
+      const diaIndex = d - 1;
+      const total = Object.entries(r)
+        .filter(([k]) => mediosTodos.includes(k))
+        .reduce((sum, [, v]) => sum + parseInt(v || 0), 0);
+
+      acumuladoPorNegocio[r.negocio][diaIndex] += total;
+    }
+  });
+
+  negocios.forEach(n => {
+    for (let i = 1; i < diasDelMes; i++) {
+      acumuladoPorNegocio[n][i] += acumuladoPorNegocio[n][i - 1];
+    }
+  });
+
+  return {
+    labels: fechas,
+    datasets: negocios.map((n, i) => ({
+      label: n,
+      data: acumuladoPorNegocio[n],
+      borderColor: colores[i % colores.length],
+      backgroundColor: colores[i % colores.length],
+      fill: false,
+      tension: 0.3,
+      borderWidth: 2,
+      pointRadius: 4
+    }))
+  };
+};
+
 return (
 <div style={{ padding: 40, fontFamily: "Arial, sans-serif", backgroundColor: "#f9f9f9" }}>
     {!isLoggedIn ? (
@@ -629,6 +681,39 @@ return (
     </table>
   </div>
 )}
+<div style={{ maxWidth: "100%", marginTop: 20 }}>
+  <h3>📈 Evolución acumulada diaria por negocio (mes actual)</h3>
+  <Line
+    data={generarEvolucionDiariaAcumulada()}
+    options={{
+      responsive: true,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              return `${context.dataset.label}: $${parseInt(context.raw).toLocaleString("es-AR")}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: value => "$" + value.toLocaleString("es-AR")
+          }
+        },
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 15
+          }
+        }
+      }
+    }}
+  />
+</div>
 
 <div style={{ maxWidth: "100%", marginTop: 20 }}>
   <Line
