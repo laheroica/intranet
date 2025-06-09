@@ -517,6 +517,10 @@ const generarEvolucionDiariaAcumulada = () => {
     }))
   };
 };
+const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", "Alquileres"];
+const [negociosExpandido, setNegociosExpandido] = useState(() =>
+  negocios.reduce((acc, n) => ({ ...acc, [n]: false }), {})
+);
 
 return (
 <div style={{ padding: 40, fontFamily: "Arial, sans-serif", backgroundColor: "#f9f9f9" }}>
@@ -1146,126 +1150,122 @@ if (yaExiste) {
 }}>
     {mostrarDetalleGrafico ? "Ocultar gráfico diario" : "Detalle gráfico"}
   </button>
-<h3 id="registros-individuales" style={{ marginTop: 30 }}>Registros individuales</h3>
-<table
-  border="0"
-  cellPadding="8"
-  style={{
-    width: "100%",
-    marginBottom: 20,
-    borderCollapse: "collapse",
-    fontFamily: "Arial, sans-serif"
-  }}
->
-  
+<h3 id="registros-individuales" style={{ marginTop: 30 }}>📄 Registros individuales</h3>
 
-
-  
-{[
-  "Felizcitas",
-  "Terrazas",
-  "Athlon 107",
-  "Athlon 24",
-  "Xtras",
-  "Alquileres"
-].map((negocioAgrupado) => {
+{negocios.map((negocioAgrupado) => {
   const registrosNegocio = registrosOrdenados().filter(r => r.negocio === negocioAgrupado);
   if (registrosNegocio.length === 0) return null;
 
   return (
-    <React.Fragment key={negocioAgrupado}>
-      <tr>
-        <td colSpan={mediosTodos.length + 3} style={{ fontWeight: "bold", paddingTop: 20, fontSize: "1.1rem" }}>
-          {negocioAgrupado}
-        </td>
-      </tr>
+    <div key={negocioAgrupado} style={{ marginBottom: 10 }}>
+      <div
+        style={{
+          background: "#f0f0f0",
+          padding: 10,
+          cursor: "pointer",
+          fontWeight: "bold",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          border: "1px solid #ccc",
+          borderRadius: 5
+        }}
+        onClick={() =>
+          setNegociosExpandido(prev => ({
+            ...prev,
+            [negocioAgrupado]: !prev[negocioAgrupado]
+          }))
+        }
+      >
+        <span>{negocioAgrupado}</span>
+        <span>{negociosExpandido[negocioAgrupado] ? "⬆️" : "⬇️"}</span>
+      </div>
 
-      <tr style={{ background: "#f0f0f0", fontWeight: "bold" }}>
-        <td style={{ border: "1px solid #888", textAlign: "left" }}>Fecha</td>
-        {mediosTodos.map(m => (
-          <td key={m} style={{ border: "1px solid #888", textAlign: "right" }}>{m}</td>
-        ))}
-        <td style={{ border: "1px solid #888", textAlign: "right" }}>Total</td>
-        <td style={{ border: "1px solid #888", textAlign: "center" }}>Acciones</td>
-      </tr>
-
-      {registrosNegocio.map((r, i) => (
-        <tr
-          key={r.id || `${r.fecha}-${i}`}
+      {negociosExpandido[negocioAgrupado] && (
+        <table
+          border="0"
+          cellPadding="8"
           style={{
-            backgroundColor: i % 2 === 0 ? "#ffffff" : "#f8f8f8"
+            width: "100%",
+            marginBottom: 20,
+            borderCollapse: "collapse",
+            fontFamily: "Arial, sans-serif",
+            marginTop: 5
           }}
         >
-          <td style={{ border: "1px solid #888", textAlign: "left" }}>{r.fecha}</td>
+          <thead>
+            <tr style={{ background: "#f0f0f0", fontWeight: "bold" }}>
+              <td style={{ border: "1px solid #888", textAlign: "left" }}>Fecha</td>
+              {mediosTodos.map(m => (
+                <td key={m} style={{ border: "1px solid #888", textAlign: "right" }}>{m}</td>
+              ))}
+              <td style={{ border: "1px solid #888", textAlign: "right" }}>Total</td>
+              <td style={{ border: "1px solid #888", textAlign: "center" }}>Acciones</td>
+            </tr>
+          </thead>
 
-          {mediosTodos.map(m => {
-            const noAplica = !mediosPorNegocio[r.negocio].includes(m);
-            return (
-              <td
-                key={m}
-                style={{
-                  textAlign: "right",
-                  border: "1px solid #888",
-                  background: noAplica ? "#ddd" : "",
-                  color: noAplica ? "#999" : ""
-                }}
+          <tbody>
+            {registrosNegocio.map((r, i) => (
+              <tr
+                key={r.id || `${r.fecha}-${i}`}
+                style={{ backgroundColor: i % 2 === 0 ? "#ffffff" : "#f8f8f8" }}
               >
-                {r[m] ? formatoMoneda(r[m]) : (noAplica ? "–" : "-")}
+                <td style={{ border: "1px solid #888", textAlign: "left" }}>{r.fecha}</td>
+
+                {mediosTodos.map(m => {
+                  const noAplica = !mediosPorNegocio[r.negocio].includes(m);
+                  return (
+                    <td
+                      key={m}
+                      style={{
+                        textAlign: "right",
+                        border: "1px solid #888",
+                        background: noAplica ? "#ddd" : "",
+                        color: noAplica ? "#999" : ""
+                      }}
+                    >
+                      {r[m] ? formatoMoneda(r[m]) : (noAplica ? "–" : "-")}
+                    </td>
+                  );
+                })}
+
+                <td style={{ border: "1px solid #888", textAlign: "right" }}>
+                  <strong>{formatoMoneda(r.totalDia)}</strong>
+                </td>
+                <td style={{ border: "1px solid #888", textAlign: "center" }}>
+                  <button onClick={() => editarRegistroPorId(r.id)}>Editar</button>{" "}
+                  <button onClick={() => eliminarRegistro(r.id)}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+
+            <tr>
+              <td colSpan={mediosTodos.length + 1} style={{
+                textAlign: "right",
+                fontWeight: "bold",
+                background: "#f9f9f9",
+                borderTop: "1px solid #888"
+              }}>
+                TOTAL {negocioAgrupado}
               </td>
-            );
-          })}
-
-          <td style={{ border: "1px solid #888", textAlign: "right" }}>
-            <strong>{formatoMoneda(r.totalDia)}</strong>
-          </td>
-          <td style={{ border: "1px solid #888", textAlign: "center" }}>
-            <button onClick={() => editarRegistroPorId(r.id)}>Editar</button>{" "}
-            <button onClick={() => eliminarRegistro(r.id)}>Eliminar</button>
-          </td>
-        </tr>
-      ))}
-
-      <tr>
-  <td
-    colSpan={mediosTodos.length + 1}
-    style={{
-      textAlign: "right",
-      fontWeight: "bold",
-      background: "#f9f9f9",
-      borderTop: "1px solid #888",
-      borderRight: "none",
-      borderLeft: "none",
-      borderBottom: "none"
-    }}
-  >
-    TOTAL {negocioAgrupado}
-  </td>
-  <td
-  style={{
-    fontWeight: "bold",
-    background: "#2ecc71", // verde suave tipo éxito
-    color: "white",
-    textAlign: "right",
-    borderTop: "1px solid #888",
-    borderRight: "none",
-    borderBottom: "none"
-  }}
->
-
-    {formatoMoneda(
-      registrosNegocio.reduce((acc, reg) => acc + parseInt(reg.totalDia || 0), 0)
-    )}
-  </td>
-</tr>
-
-    </React.Fragment>
+              <td style={{
+                fontWeight: "bold",
+                background: "#2ecc71",
+                color: "white",
+                textAlign: "right"
+              }}>
+                {formatoMoneda(
+                  registrosNegocio.reduce((acc, reg) => acc + parseInt(reg.totalDia || 0), 0)
+                )}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </div>
   );
-})
-}
+})}
 
-
-
-</table>
 {mostrarDetalleGrafico && (
   <>
 <h3 id="grafico-diario" style={{ marginTop: 20 }}>Evolución diaria</h3>
