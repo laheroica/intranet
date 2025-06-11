@@ -6,8 +6,10 @@ import {
   addDoc,
   getDocs,
   deleteDoc,
-  doc
+  doc,
+  updateDoc
 } from "firebase/firestore";
+
 import {
   Chart as ChartJS,
   LineElement,
@@ -373,9 +375,7 @@ const colores = [
   "#DC143C", "#00CED1", "#B8860B", "#2E8B57"
 ];
 console.log("✏️ Editando registro con ID:", idEnEdicion);
-const editarRegistroPorId = (id) => {
-  console.log("✏️ Editando registro con ID:", id); // 👈 agregado
-
+const editarRegistroPorId = async (id) => {
   const registro = registros.find(r => r.id === id);
   if (!registro) {
     alert("No se encontró el registro.");
@@ -383,18 +383,35 @@ const editarRegistroPorId = (id) => {
   }
 
   setNegocio(registro.negocio);
-  const [d, m, a] = registro.fecha.split("/");
-  setFechaSeleccionada(`${a}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`);
+
+  const [dia, mes, anio] = registro.fecha.split("/");
+  const fechaISO = `${anio}-${mes.padStart(2, "0")}-${dia.padStart(2, "0")}`;
+  setFechaSeleccionada(fechaISO);
 
   const nuevoForm = {};
-  Object.entries(registro).forEach(([k, v]) => {
-    if (mediosTodos.includes(k)) nuevoForm[k] = v;
+  mediosTodos.forEach(m => {
+    nuevoForm[m] = registro[m] || "";
   });
 
   setFormData(nuevoForm);
   setModoEdicion(true);
   setIdEnEdicion(registro.id);
+
+  // 🔥 Solución robusta: mostrar el formulario y esperar renderizado
+  setMostrarCargaDia(true);
+
+  // Esperar un tick para asegurar que el render se complete
+  setTimeout(() => {
+    const seccion = document.getElementById("seccion-cargar-dia");
+    if (seccion) {
+      seccion.scrollIntoView({ behavior: "smooth" });
+    } else {
+      console.warn("No se encontró el div con id 'seccion-cargar-dia'");
+    }
+  }, 300); // tiempo aumentado para asegurar que se renderice
 };
+
+
 
 const exportarTablaAExcel = () => {
   const datosParaExcel = [];
@@ -524,6 +541,12 @@ const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", 
 const [negociosExpandido, setNegociosExpandido] = useState(() =>
   negocios.reduce((acc, n) => ({ ...acc, [n]: false }), {})
 );
+const toggleNegocio = (nombre) => {
+  setNegociosExpandido(prev => ({
+    ...prev,
+    [nombre]: !prev[nombre]
+  }));
+};
 
 return (
 <div style={{ padding: 40, fontFamily: "Arial, sans-serif", backgroundColor: "#f9f9f9" }}>
@@ -555,10 +578,11 @@ return (
   <button
     onClick={() => {
       setMostrarCargaDia(true);
-      setTimeout(() => {
-        const seccion = document.getElementById("seccion-cargar-dia");
-        if (seccion) seccion.scrollIntoView({ behavior: "smooth" });
-      }, 100);
+  setTimeout(() => {
+    const seccion = document.getElementById("seccion-cargar-dia");
+    if (seccion) seccion.scrollIntoView({ behavior: "smooth" });
+  }, 100);
+
     }}
     style={estiloBoton("#007BFF", "white")}
   >
@@ -1088,54 +1112,61 @@ await addDoc(collection(db, "registros"), nuevoRegistro);
           ) : (
             <>
               <button onClick={async () => {
-const [anio, mes, dia] = fechaSeleccionada.split("-");
-const fechaFormateada = `${dia}/${mes}/${anio}`;
-
-const yaExiste = registros.some(r => {
-  const esDuplicado = r.fecha === fechaFormateada && r.negocio === negocio && r.id !== idEnEdicion;
-
-  if (esDuplicado) {
-    console.log("⚠️ Registro duplicado detectado:", r);
-    console.log("🆔 ID actual en edición:", idEnEdicion);
+  if (!fechaSeleccionada || !negocio) {
+    alert("Debe seleccionar fecha y negocio.");
+    return;
   }
 
-  return esDuplicado;
-});
+  const [anio, mes, dia] = fechaSeleccionada.split("-");
+  const fechaFormateada = `${dia}/${mes}/${anio}`;
 
-if (yaExiste) {
-  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
-  return;
+  // ✅ Revisión precisa: ¿existe OTRO registro con misma fecha y negocio?
+  if (!modoEdicion) {
+  const duplicado = registros.find(r =>
+    r.fecha === fechaFormateada &&
+    r.negocio === negocio
+  );
+
+  if (duplicado) {
+    alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
+    return;
+  }
 }
 
-if (yaExiste) {
-  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
-  return;
-}
 
-                const totalDia = Object.entries(formData).reduce(
-                  (sum, [, val]) => sum + parseInt(val || 0),
-                  0
-                );
+  const totalDia = Object.entries(formData).reduce(
+    (sum, [, val]) => sum + parseInt(val || 0),
+    0
+  );
 
-                const actualizado = {
-                  fecha: fechaFormateada,
-                  negocio,
-                  totalDia,
-                  ...formData
-                };
+  const actualizado = {
+    fecha: fechaFormateada,
+    negocio,
+    totalDia,
+    ...formData
+  };
 
-                await deleteDoc(doc(db, "registros", idEnEdicion));
-                await addDoc(collection(db, "registros"), actualizado);
+  try {
+    await updateDoc(doc(db, "registros", idEnEdicion), actualizado);
+    alert("Registro actualizado correctamente ✅");
 
-                setFormData({});
-                setNegocio("");
-                setFechaSeleccionada("");
-                setModoEdicion(false);
-                setIdEnEdicion(null);
-                cargarRegistros();
-              }}>
-                Actualizar
-              </button>
+    setFormData({});
+    setNegocio("");
+    setFechaSeleccionada("");
+    setModoEdicion(false);
+    setIdEnEdicion(null);
+    cargarRegistros();
+  } catch (error) {
+    console.error("❌ Error al actualizar:", error);
+    alert("Ocurrió un error al actualizar el registro.");
+  }
+}}>
+  Actualizar
+</button>
+
+
+
+
 
               <button style={{ marginLeft: 10 }} onClick={() => {
                 setModoEdicion(false);
@@ -1169,6 +1200,7 @@ if (yaExiste) {
 {negocios.map((negocioAgrupado) => {
   const registrosNegocio = registrosOrdenados().filter(r => r.negocio === negocioAgrupado);
   if (registrosNegocio.length === 0) return null;
+  const expandido = negociosExpandido[negocioAgrupado];
 
   return (
     <div key={negocioAgrupado} style={{ marginBottom: 10 }}>
@@ -1247,7 +1279,8 @@ if (yaExiste) {
                   <strong>{formatoMoneda(r.totalDia)}</strong>
                 </td>
                 <td style={{ border: "1px solid #888", textAlign: "center" }}>
-                  <button onClick={() => editarRegistroPorId(r.id)}>Editar</button>{" "}
+                  <button onClick={() => editarRegistroPorId(r.id)}>Editar</button>
+
                   <button onClick={() => eliminarRegistro(r.id)}>Eliminar</button>
                 </td>
               </tr>
