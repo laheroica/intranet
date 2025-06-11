@@ -372,7 +372,10 @@ const colores = [
   "#9966FF", "#FF9F40", "#A0522D", "#008000",
   "#DC143C", "#00CED1", "#B8860B", "#2E8B57"
 ];
+console.log("✏️ Editando registro con ID:", idEnEdicion);
 const editarRegistroPorId = (id) => {
+  console.log("✏️ Editando registro con ID:", id); // 👈 agregado
+
   const registro = registros.find(r => r.id === id);
   if (!registro) {
     alert("No se encontró el registro.");
@@ -1088,11 +1091,22 @@ await addDoc(collection(db, "registros"), nuevoRegistro);
 const [anio, mes, dia] = fechaSeleccionada.split("-");
 const fechaFormateada = `${dia}/${mes}/${anio}`;
 
-const yaExiste = registros.some(r =>
-  r.fecha === fechaFormateada &&
-  r.negocio === negocio &&
-  r.id !== idEnEdicion
-);
+const yaExiste = registros.some(r => {
+  const esDuplicado = r.fecha === fechaFormateada && r.negocio === negocio && r.id !== idEnEdicion;
+
+  if (esDuplicado) {
+    console.log("⚠️ Registro duplicado detectado:", r);
+    console.log("🆔 ID actual en edición:", idEnEdicion);
+  }
+
+  return esDuplicado;
+});
+
+if (yaExiste) {
+  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
+  return;
+}
+
 if (yaExiste) {
   alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
   return;
