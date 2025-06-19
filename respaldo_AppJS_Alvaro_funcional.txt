@@ -6,8 +6,10 @@ import {
   addDoc,
   getDocs,
   deleteDoc,
-  doc
+  doc,
+  updateDoc
 } from "firebase/firestore";
+
 import {
   Chart as ChartJS,
   LineElement,
@@ -57,6 +59,7 @@ const [modoEdicion, setModoEdicion] = useState(false);
 const [idEnEdicion, setIdEnEdicion] = useState(null);
 const [mostrarCargaDia, setMostrarCargaDia] = useState(false);
 const [filtroGraficoNegocio, setFiltroGraficoNegocio] = useState("todos");
+const [seccionActiva, setSeccionActiva] = useState("dashboard");
 
 
 const [ultimosDiasPorNegocio, setUltimosDiasPorNegocio] = useState({});
@@ -114,27 +117,34 @@ const calcularAcumulados = () => {
   };
 
   const mediosTodos = Array.from(new Set(Object.values(mediosPorNegocio).flat()));
-
 useEffect(() => {
   if (isLoggedIn) {
     cargarRegistros();
 
     const ahora = new Date();
     const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
+    if (inicio instanceof Date && !isNaN(inicio)) {
+      setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
+    } else {
+      console.warn("Fecha inválida (inicio del mes)");
+      setFiltroFechaDesde("");
+    }
 
-    // No seteamos filtroFechaHasta acá, lo hacemos en el siguiente useEffect
     setFiltroNegociosMulti(Object.keys(mediosPorNegocio));
     setFiltroMediosMulti(mediosTodos);
-        setMostrarDetalleGrafico(true); // <-- MOSTRAR GRÁFICO AL INICIAR
-
+    setMostrarDetalleGrafico(true);
   }
 }, [isLoggedIn]);
+
 useEffect(() => {
-  if (ultimaFechaGlobal) {
+  if (ultimaFechaGlobal instanceof Date && !isNaN(ultimaFechaGlobal)) {
     setFiltroFechaHasta(ultimaFechaGlobal.toISOString().split("T")[0]);
+  } else {
+    console.warn("Fecha inválida (última fecha global):", ultimaFechaGlobal);
+    setFiltroFechaHasta("");
   }
 }, [ultimaFechaGlobal]);
+
 useEffect(() => {
   if (
     filtroFechaDesde &&
@@ -153,6 +163,7 @@ useEffect(() => {
   filtroMediosMulti,
   registros
 ]);
+
 
 
 
@@ -178,10 +189,21 @@ const cargarRegistros = async () => {
 
   setUltimosDiasPorNegocio(ultimos);
   // Calcular la última fecha cargada entre todos los registros
-const todasLasFechas = data.map(r => {
-  const [dia, mes, anio] = r.fecha.split("/").map(Number);
-  return new Date(`${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`);
-});
+const todasLasFechas = data
+  .filter(r => r.fecha && r.fecha.includes("/"))
+  .map(r => {
+    const [dia, mes, anio] = r.fecha.split("/").map(Number);
+    return new Date(`${anio}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`);
+  });
+
+if (todasLasFechas.length > 0) {
+  const ultimaFechaCargada = new Date(Math.max(...todasLasFechas));
+  setUltimaFechaGlobal(ultimaFechaCargada);
+} else {
+  setUltimaFechaGlobal(null); // o lo podés dejar sin setear
+}
+
+
 const ultimaFechaCargada = new Date(Math.max(...todasLasFechas));
 setUltimaFechaGlobal(ultimaFechaCargada);
 
@@ -304,26 +326,18 @@ const listaFiltrada = registrosFiltrados;
   setDetalleDiario(lista);
 };
 
-const eliminarRegistro = async (fecha, negocio) => {
-  const snapshot = await getDocs(collection(db, "registros"));
-  const docs = snapshot.docs.filter(doc =>
-    doc.data().fecha === fecha && doc.data().negocio === negocio
-  );
-
-  if (docs.length === 0) {
-    alert(`No se encontró el registro de ${negocio} para ${fecha}.`);
-    return;
-  }
-
-  const confirm = window.confirm(`¿Eliminar el registro de ${negocio} del ${fecha}?`);
+const eliminarRegistro = async (id) => {
+  const confirm = window.confirm("¿Eliminar este registro?");
   if (!confirm) return;
 
-  for (let docu of docs) {
-    await deleteDoc(doc(db, "registros", docu.id));
+  try {
+    await deleteDoc(doc(db, "registros", id));
+    alert("Registro eliminado.");
+    cargarRegistros(); // 🔁 Esto vuelve a cargar la lista
+  } catch (error) {
+    console.error("Error eliminando el documento:", error);
+    alert("❌ Hubo un error al eliminar.");
   }
-
-  alert("Registro eliminado.");
-  cargarRegistros();
 };
 const registrosOrdenados = () => {
   return [...registros].sort((a, b) => {
@@ -361,6 +375,44 @@ const colores = [
   "#9966FF", "#FF9F40", "#A0522D", "#008000",
   "#DC143C", "#00CED1", "#B8860B", "#2E8B57"
 ];
+console.log("✏️ Editando registro con ID:", idEnEdicion);
+const editarRegistroPorId = async (id) => {
+  const registro = registros.find(r => r.id === id);
+  if (!registro) {
+    alert("No se encontró el registro.");
+    return;
+  }
+
+  setNegocio(registro.negocio);
+
+  const [dia, mes, anio] = registro.fecha.split("/");
+  const fechaISO = `${anio}-${mes.padStart(2, "0")}-${dia.padStart(2, "0")}`;
+  setFechaSeleccionada(fechaISO);
+
+  const nuevoForm = {};
+  mediosTodos.forEach(m => {
+    nuevoForm[m] = registro[m] || "";
+  });
+
+  setFormData(nuevoForm);
+  setModoEdicion(true);
+  setIdEnEdicion(registro.id);
+
+  // 🔥 Solución robusta: mostrar el formulario y esperar renderizado
+  setMostrarCargaDia(true);
+
+  // Esperar un tick para asegurar que el render se complete
+  setTimeout(() => {
+    const seccion = document.getElementById("seccion-cargar-dia");
+    if (seccion) {
+      seccion.scrollIntoView({ behavior: "smooth" });
+    } else {
+      console.warn("No se encontró el div con id 'seccion-cargar-dia'");
+    }
+  }, 300); // tiempo aumentado para asegurar que se renderice
+};
+
+
 
 const exportarTablaAExcel = () => {
   const datosParaExcel = [];
@@ -435,6 +487,113 @@ const estiloBoton = (bgColor, textColor) => ({
 });
 
 
+const generarEvolucionDiariaAcumulada = () => {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = ahora.getMonth(); // 0-indexed
+
+  const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", "Alquileres"];
+  const diasDelMes = new Date(anio, mes + 1, 0).getDate();
+
+  const fechas = Array.from({ length: diasDelMes }, (_, i) => {
+    const dia = String(i + 1).padStart(2, "0");
+    const mesStr = String(mes + 1).padStart(2, "0");
+    return `${dia}/${mesStr}/${anio}`;
+  });
+
+  const acumuladoPorNegocio = {};
+  negocios.forEach(n => {
+    acumuladoPorNegocio[n] = Array(diasDelMes).fill(0);
+  });
+
+  registros.forEach(r => {
+    const [d, m, y] = r.fecha.split("/").map(Number);
+    if (m === mes + 1 && y === anio && negocios.includes(r.negocio)) {
+      const diaIndex = d - 1;
+      const total = Object.entries(r)
+        .filter(([k]) => mediosTodos.includes(k))
+        .reduce((sum, [, v]) => sum + parseInt(v || 0), 0);
+
+      acumuladoPorNegocio[r.negocio][diaIndex] += total;
+    }
+  });
+
+  negocios.forEach(n => {
+    for (let i = 1; i < diasDelMes; i++) {
+      acumuladoPorNegocio[n][i] += acumuladoPorNegocio[n][i - 1];
+    }
+  });
+
+  return {
+    labels: fechas,
+    datasets: negocios.map((n, i) => ({
+      label: n,
+      data: acumuladoPorNegocio[n],
+      borderColor: colores[i % colores.length],
+      backgroundColor: colores[i % colores.length],
+      fill: false,
+      tension: 0.3,
+      borderWidth: 2,
+      pointRadius: 4
+    }))
+  };
+};
+const generarFacturacionDiariaPorNegocio = () => {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = ahora.getMonth(); // 0-indexed
+
+  const diasDelMes = new Date(anio, mes + 1, 0).getDate();
+
+  const fechas = Array.from({ length: diasDelMes }, (_, i) => {
+    const dia = String(i + 1).padStart(2, "0");
+    const mesStr = String(mes + 1).padStart(2, "0");
+    return `${dia}/${mesStr}/${anio}`;
+  });
+
+  const facturacionPorNegocio = {};
+  negocios.forEach(n => {
+    facturacionPorNegocio[n] = Array(diasDelMes).fill(0);
+  });
+
+  registros.forEach(r => {
+    const [d, m, y] = r.fecha.split("/").map(Number);
+    if (m === mes + 1 && y === anio && negocios.includes(r.negocio)) {
+      const diaIndex = d - 1;
+      const total = Object.entries(r)
+        .filter(([k]) => mediosTodos.includes(k))
+        .reduce((sum, [, v]) => sum + parseInt(v || 0), 0);
+
+      facturacionPorNegocio[r.negocio][diaIndex] += total;
+    }
+  });
+
+  return {
+    labels: fechas,
+    datasets: negocios.map((n, i) => ({
+      label: n,
+      data: facturacionPorNegocio[n],
+      borderColor: colores[i % colores.length],
+      backgroundColor: colores[i % colores.length],
+      fill: false,
+      tension: 0.3,
+      borderWidth: 2,
+      pointRadius: 4
+    }))
+  };
+};
+
+const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", "Alquileres"];
+const [negociosExpandido, setNegociosExpandido] = useState(() =>
+  negocios.reduce((acc, n) => ({ ...acc, [n]: false }), {})
+);
+const toggleNegocio = (nombre) => {
+  setNegociosExpandido(prev => ({
+    ...prev,
+    [nombre]: !prev[nombre]
+  }));
+};
+
 return (
 <div style={{ padding: 40, fontFamily: "Arial, sans-serif", backgroundColor: "#f9f9f9" }}>
     {!isLoggedIn ? (
@@ -450,9 +609,76 @@ return (
           }
         }}>Entrar</button>
       </div>
-    ) : (
+     ) : (
+  <>
+    {seccionActiva === "dashboard" && (
+      <div style={{ textAlign: "center" }}>
+        <h2>📊 Dashboard Principal</h2>
+        <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "20px", marginTop: 30 }}>
+  <button
+    onClick={() => setSeccionActiva("carga")}
+    style={{
+      padding: "15px 25px",
+      borderRadius: "12px",
+      background: "#007BFF",
+      color: "white",
+      fontWeight: "bold",
+      border: "none",
+      boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    }}
+    onMouseOver={(e) => e.target.style.background = "#0056b3"}
+    onMouseOut={(e) => e.target.style.background = "#007BFF"}
+  >
+    📥 Carga de Datos
+  </button>
+
+  <button
+    onClick={() => setSeccionActiva("ventas")}
+    style={{
+      padding: "15px 25px",
+      borderRadius: "12px",
+      background: "#28A745",
+      color: "white",
+      fontWeight: "bold",
+      border: "none",
+      boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    }}
+    onMouseOver={(e) => e.target.style.background = "#1e7e34"}
+    onMouseOut={(e) => e.target.style.background = "#28A745"}
+  >
+    💰 Ventas / Costos
+  </button>
+
+  <button
+    onClick={() => setSeccionActiva("informes")}
+    style={{
+      padding: "15px 25px",
+      borderRadius: "12px",
+      background: "#17A2B8",
+      color: "white",
+      fontWeight: "bold",
+      border: "none",
+      boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    }}
+    onMouseOver={(e) => e.target.style.background = "#117a8b"}
+    onMouseOut={(e) => e.target.style.background = "#17A2B8"}
+  >
+    📈 Informes
+  </button>
+</div>
+
+      </div>
+    )}
+
+    {seccionActiva === "carga" && (
       <>
-<div style={{ backgroundColor: "#fff", padding: 25, borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: 30 }}>
+       <div style={{ backgroundColor: "#fff", padding: 25, borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: 30 }}>
   <h2 style={{ fontFamily: "Arial, sans-serif", marginBottom: 5 }}>Intranet Negocios</h2>
   <p style={{ fontFamily: "Arial, sans-serif" }}>Bienvenido al sistema de control de ingresos.</p>
 </div>
@@ -465,10 +691,11 @@ return (
   <button
     onClick={() => {
       setMostrarCargaDia(true);
-      setTimeout(() => {
-        const seccion = document.getElementById("seccion-cargar-dia");
-        if (seccion) seccion.scrollIntoView({ behavior: "smooth" });
-      }, 100);
+  setTimeout(() => {
+    const seccion = document.getElementById("seccion-cargar-dia");
+    if (seccion) seccion.scrollIntoView({ behavior: "smooth" });
+  }, 100);
+
     }}
     style={estiloBoton("#007BFF", "white")}
   >
@@ -598,6 +825,72 @@ return (
     </table>
   </div>
 )}
+<div style={{ maxWidth: "100%", marginTop: 20 }}>
+  <h3>📈 Evolución acumulada diaria por negocio (mes actual)</h3>
+  <Line
+    data={generarEvolucionDiariaAcumulada()}
+    options={{
+      responsive: true,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              return `${context.dataset.label}: $${parseInt(context.raw).toLocaleString("es-AR")}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: value => "$" + value.toLocaleString("es-AR")
+          }
+        },
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 15
+          }
+        }
+      }
+    }}
+  />
+</div>
+<div style={{ maxWidth: "100%", marginTop: 40 }}>
+  <h3>📉 Facturación diaria por negocio (mes actual)</h3>
+  <Line
+    data={generarFacturacionDiariaPorNegocio()}
+    options={{
+      responsive: true,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              return `${context.dataset.label}: $${parseInt(context.raw).toLocaleString("es-AR")}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: value => "$" + value.toLocaleString("es-AR")
+          }
+        },
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 15
+          }
+        }
+      }
+    }}
+  />
+</div>
 
 <div style={{ maxWidth: "100%", marginTop: 20 }}>
   <Line
@@ -675,19 +968,37 @@ return (
       <div style={{ marginTop: 10, marginBottom: 10 }}>
   <button
   onClick={() => {
-    const ahora = new Date();
-    const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
-    const fin = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
+    try {
+      const ahora = new Date();
+      const inicio = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+      const fin = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0);
 
-    setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
-    setFiltroFechaHasta(fin.toISOString().split("T")[0]);
+      if (inicio instanceof Date && !isNaN(inicio)) {
+        setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
+      } else {
+        console.warn("⚠️ Fecha de inicio inválida:", inicio);
+        setFiltroFechaDesde("");
+      }
 
-    calcularAcumulados();
-    calcularDetalleDiarioFiltrado(); // solo llamás a la función, no la declarás acá
+      if (fin instanceof Date && !isNaN(fin)) {
+        setFiltroFechaHasta(fin.toISOString().split("T")[0]);
+      } else {
+        console.warn("⚠️ Fecha de fin inválida:", fin);
+        setFiltroFechaHasta("");
+      }
+
+      calcularAcumulados();
+      calcularDetalleDiarioFiltrado();
+
+    } catch (error) {
+      console.error("🛑 Error al formatear fechas:", error);
+    }
   }}
+  style={estiloBoton("#007BFF", "white")}
 >
-  📅 Ver mes actual
+  📊 Ver acumulados del mes
 </button>
+
 
 
   <button
@@ -917,14 +1228,10 @@ return (
                   return;
                 }
 
-                const fecha = new Date(fechaSeleccionada);
-                const fechaFormateada = fecha.toLocaleDateString("es-AR");
+const [anio, mes, dia] = fechaSeleccionada.split("-");
+const fechaFormateada = `${dia}/${mes}/${anio}`;
 
-                const yaExiste = registros.some(r => r.fecha === fechaFormateada && r.negocio === negocio);
-                if (yaExiste) {
-                  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
-                  return;
-                }
+                
 
                 const totalDia = Object.entries(formData).reduce(
                     (sum, [, val]) => sum + parseInt(val || 0, 10),
@@ -939,7 +1246,7 @@ return (
                   ...formData
                 };
 
-                await addDoc(collection(db, "registros"), nuevoRegistro);
+await addDoc(collection(db, "registros"), nuevoRegistro);
                 setFormData({});
                 setNegocio("");
                 setFechaSeleccionada("");
@@ -951,43 +1258,61 @@ return (
           ) : (
             <>
               <button onClick={async () => {
-                const fecha = new Date(fechaSeleccionada);
-                const fechaFormateada = fecha.toLocaleDateString("es-AR");
+  if (!fechaSeleccionada || !negocio) {
+    alert("Debe seleccionar fecha y negocio.");
+    return;
+  }
 
-                const yaExiste = registros.some(r =>
-                  r.fecha === fechaFormateada &&
-                  r.negocio === negocio &&
-                  r.id !== idEnEdicion
-                );
-                if (yaExiste) {
-                  alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
-                  return;
-                }
+  const [anio, mes, dia] = fechaSeleccionada.split("-");
+  const fechaFormateada = `${dia}/${mes}/${anio}`;
 
-                const totalDia = Object.entries(formData).reduce(
-                  (sum, [, val]) => sum + parseInt(val || 0),
-                  0
-                );
+  // ✅ Revisión precisa: ¿existe OTRO registro con misma fecha y negocio?
+  if (!modoEdicion) {
+  const duplicado = registros.find(r =>
+    r.fecha === fechaFormateada &&
+    r.negocio === negocio
+  );
 
-                const actualizado = {
-                  fecha: fechaFormateada,
-                  negocio,
-                  totalDia,
-                  ...formData
-                };
+  if (duplicado) {
+    alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`);
+    return;
+  }
+}
 
-                await deleteDoc(doc(db, "registros", idEnEdicion));
-                await addDoc(collection(db, "registros"), actualizado);
 
-                setFormData({});
-                setNegocio("");
-                setFechaSeleccionada("");
-                setModoEdicion(false);
-                setIdEnEdicion(null);
-                cargarRegistros();
-              }}>
-                Actualizar
-              </button>
+  const totalDia = Object.entries(formData).reduce(
+    (sum, [, val]) => sum + parseInt(val || 0),
+    0
+  );
+
+  const actualizado = {
+    fecha: fechaFormateada,
+    negocio,
+    totalDia,
+    ...formData
+  };
+
+  try {
+    await updateDoc(doc(db, "registros", idEnEdicion), actualizado);
+    alert("Registro actualizado correctamente ✅");
+
+    setFormData({});
+    setNegocio("");
+    setFechaSeleccionada("");
+    setModoEdicion(false);
+    setIdEnEdicion(null);
+    cargarRegistros();
+  } catch (error) {
+    console.error("❌ Error al actualizar:", error);
+    alert("Ocurrió un error al actualizar el registro.");
+  }
+}}>
+  Actualizar
+</button>
+
+
+
+
 
               <button style={{ marginLeft: 10 }} onClick={() => {
                 setModoEdicion(false);
@@ -1016,126 +1341,124 @@ return (
 }}>
     {mostrarDetalleGrafico ? "Ocultar gráfico diario" : "Detalle gráfico"}
   </button>
-<h3 id="registros-individuales" style={{ marginTop: 30 }}>Registros individuales</h3>
-<table
-  border="0"
-  cellPadding="8"
-  style={{
-    width: "100%",
-    marginBottom: 20,
-    borderCollapse: "collapse",
-    fontFamily: "Arial, sans-serif"
-  }}
->
-  
+<h3 id="registros-individuales" style={{ marginTop: 30 }}>📄 Registros individuales</h3>
 
-
-  
-{[
-  "Felizcitas",
-  "Terrazas",
-  "Athlon 107",
-  "Athlon 24",
-  "Xtras",
-  "Alquileres"
-].map((negocioAgrupado) => {
+{negocios.map((negocioAgrupado) => {
   const registrosNegocio = registrosOrdenados().filter(r => r.negocio === negocioAgrupado);
   if (registrosNegocio.length === 0) return null;
+  const expandido = negociosExpandido[negocioAgrupado];
 
   return (
-    <React.Fragment key={negocioAgrupado}>
-      <tr>
-        <td colSpan={mediosTodos.length + 3} style={{ fontWeight: "bold", paddingTop: 20, fontSize: "1.1rem" }}>
-          {negocioAgrupado}
-        </td>
-      </tr>
+    <div key={negocioAgrupado} style={{ marginBottom: 10 }}>
+      <div
+        style={{
+          background: "#f0f0f0",
+          padding: 10,
+          cursor: "pointer",
+          fontWeight: "bold",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          border: "1px solid #ccc",
+          borderRadius: 5
+        }}
+        onClick={() =>
+          setNegociosExpandido(prev => ({
+            ...prev,
+            [negocioAgrupado]: !prev[negocioAgrupado]
+          }))
+        }
+      >
+        <span>{negocioAgrupado}</span>
+        <span>{negociosExpandido[negocioAgrupado] ? "⬆️" : "⬇️"}</span>
+      </div>
 
-      <tr style={{ background: "#f0f0f0", fontWeight: "bold" }}>
-        <td style={{ border: "1px solid #888", textAlign: "left" }}>Fecha</td>
-        {mediosTodos.map(m => (
-          <td key={m} style={{ border: "1px solid #888", textAlign: "right" }}>{m}</td>
-        ))}
-        <td style={{ border: "1px solid #888", textAlign: "right" }}>Total</td>
-        <td style={{ border: "1px solid #888", textAlign: "center" }}>Acciones</td>
-      </tr>
-
-      {registrosNegocio.map((r, i) => (
-        <tr
-          key={r.id || `${r.fecha}-${i}`}
+      {negociosExpandido[negocioAgrupado] && (
+        <table
+          border="0"
+          cellPadding="8"
           style={{
-            backgroundColor: i % 2 === 0 ? "#ffffff" : "#f8f8f8"
+            width: "100%",
+            marginBottom: 20,
+            borderCollapse: "collapse",
+            fontFamily: "Arial, sans-serif",
+            marginTop: 5
           }}
         >
-          <td style={{ border: "1px solid #888", textAlign: "left" }}>{r.fecha}</td>
+          <thead>
+            <tr style={{ background: "#f0f0f0", fontWeight: "bold" }}>
+              <td style={{ border: "1px solid #888", textAlign: "left" }}>Fecha</td>
+              {mediosTodos.map(m => (
+                <td key={m} style={{ border: "1px solid #888", textAlign: "right" }}>{m}</td>
+              ))}
+              <td style={{ border: "1px solid #888", textAlign: "right" }}>Total</td>
+              <td style={{ border: "1px solid #888", textAlign: "center" }}>Acciones</td>
+            </tr>
+          </thead>
 
-          {mediosTodos.map(m => {
-            const noAplica = !mediosPorNegocio[r.negocio].includes(m);
-            return (
-              <td
-                key={m}
-                style={{
-                  textAlign: "right",
-                  border: "1px solid #888",
-                  background: noAplica ? "#ddd" : "",
-                  color: noAplica ? "#999" : ""
-                }}
+          <tbody>
+            {registrosNegocio.map((r, i) => (
+              <tr
+                key={r.id || `${r.fecha}-${i}`}
+                style={{ backgroundColor: i % 2 === 0 ? "#ffffff" : "#f8f8f8" }}
               >
-                {r[m] ? formatoMoneda(r[m]) : (noAplica ? "–" : "-")}
+                <td style={{ border: "1px solid #888", textAlign: "left" }}>{r.fecha}</td>
+
+                {mediosTodos.map(m => {
+                  const noAplica = !mediosPorNegocio[r.negocio].includes(m);
+                  return (
+                    <td
+                      key={m}
+                      style={{
+                        textAlign: "right",
+                        border: "1px solid #888",
+                        background: noAplica ? "#ddd" : "",
+                        color: noAplica ? "#999" : ""
+                      }}
+                    >
+                      {r[m] ? formatoMoneda(r[m]) : (noAplica ? "–" : "-")}
+                    </td>
+                  );
+                })}
+
+                <td style={{ border: "1px solid #888", textAlign: "right" }}>
+                  <strong>{formatoMoneda(r.totalDia)}</strong>
+                </td>
+                <td style={{ border: "1px solid #888", textAlign: "center" }}>
+                  <button onClick={() => editarRegistroPorId(r.id)}>Editar</button>
+
+                  <button onClick={() => eliminarRegistro(r.id)}>Eliminar</button>
+                </td>
+              </tr>
+            ))}
+
+            <tr>
+              <td colSpan={mediosTodos.length + 1} style={{
+                textAlign: "right",
+                fontWeight: "bold",
+                background: "#f9f9f9",
+                borderTop: "1px solid #888"
+              }}>
+                TOTAL {negocioAgrupado}
               </td>
-            );
-          })}
-
-          <td style={{ border: "1px solid #888", textAlign: "right" }}>
-            <strong>{formatoMoneda(r.totalDia)}</strong>
-          </td>
-          <td style={{ border: "1px solid #888", textAlign: "center" }}>
-            <button onClick={() => editarRegistro(r.fecha, r.negocio)}>Editar</button>{" "}
-            <button onClick={() => eliminarRegistro(r.fecha, r.negocio)}>Eliminar</button>
-          </td>
-        </tr>
-      ))}
-
-      <tr>
-  <td
-    colSpan={mediosTodos.length + 1}
-    style={{
-      textAlign: "right",
-      fontWeight: "bold",
-      background: "#f9f9f9",
-      borderTop: "1px solid #888",
-      borderRight: "none",
-      borderLeft: "none",
-      borderBottom: "none"
-    }}
-  >
-    TOTAL {negocioAgrupado}
-  </td>
-  <td
-  style={{
-    fontWeight: "bold",
-    background: "#2ecc71", // verde suave tipo éxito
-    color: "white",
-    textAlign: "right",
-    borderTop: "1px solid #888",
-    borderRight: "none",
-    borderBottom: "none"
-  }}
->
-
-    {formatoMoneda(
-      registrosNegocio.reduce((acc, reg) => acc + parseInt(reg.totalDia || 0), 0)
-    )}
-  </td>
-</tr>
-
-    </React.Fragment>
+              <td style={{
+                fontWeight: "bold",
+                background: "#2ecc71",
+                color: "white",
+                textAlign: "right"
+              }}>
+                {formatoMoneda(
+                  registrosNegocio.reduce((acc, reg) => acc + parseInt(reg.totalDia || 0), 0)
+                )}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      )}
+    </div>
   );
-})
-}
+})}
 
-
-
-</table>
 {mostrarDetalleGrafico && (
   <>
 <h3 id="grafico-diario" style={{ marginTop: 20 }}>Evolución diaria</h3>
@@ -1197,8 +1520,28 @@ return (
 
 
   </div>
+        <button style={{ marginTop: 30 }} onClick={() => setSeccionActiva("dashboard")}>⬅️ Volver al Dashboard</button>
       </>
     )}
+
+    {seccionActiva === "ventas" && (
+      <div>
+        <h3>💰 Sección de Ventas y Costos</h3>
+        <p>Próximamente...</p>
+        <button onClick={() => setSeccionActiva("dashboard")}>⬅️ Volver al Dashboard</button>
+      </div>
+    )}
+
+    {seccionActiva === "informes" && (
+      <div>
+        <h3>📈 Sección de Informes</h3>
+        <p>Próximamente...</p>
+        <button onClick={() => setSeccionActiva("dashboard")}>⬅️ Volver al Dashboard</button>
+      </div>
+    )}
+  </>
+)}
+
     
   </div>
   

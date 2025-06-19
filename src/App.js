@@ -59,6 +59,7 @@ const [modoEdicion, setModoEdicion] = useState(false);
 const [idEnEdicion, setIdEnEdicion] = useState(null);
 const [mostrarCargaDia, setMostrarCargaDia] = useState(false);
 const [filtroGraficoNegocio, setFiltroGraficoNegocio] = useState("todos");
+const [seccionActiva, setSeccionActiva] = useState("dashboard");
 
 
 const [ultimosDiasPorNegocio, setUltimosDiasPorNegocio] = useState({});
@@ -537,6 +538,51 @@ const generarEvolucionDiariaAcumulada = () => {
     }))
   };
 };
+const generarFacturacionDiariaPorNegocio = () => {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = ahora.getMonth(); // 0-indexed
+
+  const diasDelMes = new Date(anio, mes + 1, 0).getDate();
+
+  const fechas = Array.from({ length: diasDelMes }, (_, i) => {
+    const dia = String(i + 1).padStart(2, "0");
+    const mesStr = String(mes + 1).padStart(2, "0");
+    return `${dia}/${mesStr}/${anio}`;
+  });
+
+  const facturacionPorNegocio = {};
+  negocios.forEach(n => {
+    facturacionPorNegocio[n] = Array(diasDelMes).fill(0);
+  });
+
+  registros.forEach(r => {
+    const [d, m, y] = r.fecha.split("/").map(Number);
+    if (m === mes + 1 && y === anio && negocios.includes(r.negocio)) {
+      const diaIndex = d - 1;
+      const total = Object.entries(r)
+        .filter(([k]) => mediosTodos.includes(k))
+        .reduce((sum, [, v]) => sum + parseInt(v || 0), 0);
+
+      facturacionPorNegocio[r.negocio][diaIndex] += total;
+    }
+  });
+
+  return {
+    labels: fechas,
+    datasets: negocios.map((n, i) => ({
+      label: n,
+      data: facturacionPorNegocio[n],
+      borderColor: colores[i % colores.length],
+      backgroundColor: colores[i % colores.length],
+      fill: false,
+      tension: 0.3,
+      borderWidth: 2,
+      pointRadius: 4
+    }))
+  };
+};
+
 const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", "Alquileres"];
 const [negociosExpandido, setNegociosExpandido] = useState(() =>
   negocios.reduce((acc, n) => ({ ...acc, [n]: false }), {})
@@ -563,9 +609,76 @@ return (
           }
         }}>Entrar</button>
       </div>
-    ) : (
+     ) : (
+  <>
+    {seccionActiva === "dashboard" && (
+      <div style={{ textAlign: "center" }}>
+        <h2>📊 Dashboard Principal</h2>
+        <div style={{ display: "flex", justifyContent: "center", flexWrap: "wrap", gap: "20px", marginTop: 30 }}>
+  <button
+    onClick={() => setSeccionActiva("carga")}
+    style={{
+      padding: "15px 25px",
+      borderRadius: "12px",
+      background: "#007BFF",
+      color: "white",
+      fontWeight: "bold",
+      border: "none",
+      boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    }}
+    onMouseOver={(e) => e.target.style.background = "#0056b3"}
+    onMouseOut={(e) => e.target.style.background = "#007BFF"}
+  >
+    📥 Carga de Datos
+  </button>
+
+  <button
+    onClick={() => setSeccionActiva("ventas")}
+    style={{
+      padding: "15px 25px",
+      borderRadius: "12px",
+      background: "#28A745",
+      color: "white",
+      fontWeight: "bold",
+      border: "none",
+      boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    }}
+    onMouseOver={(e) => e.target.style.background = "#1e7e34"}
+    onMouseOut={(e) => e.target.style.background = "#28A745"}
+  >
+    💰 Ventas / Costos
+  </button>
+
+  <button
+    onClick={() => setSeccionActiva("informes")}
+    style={{
+      padding: "15px 25px",
+      borderRadius: "12px",
+      background: "#17A2B8",
+      color: "white",
+      fontWeight: "bold",
+      border: "none",
+      boxShadow: "0 4px 6px rgba(0,0,0,0.1)",
+      cursor: "pointer",
+      transition: "all 0.2s",
+    }}
+    onMouseOver={(e) => e.target.style.background = "#117a8b"}
+    onMouseOut={(e) => e.target.style.background = "#17A2B8"}
+  >
+    📈 Informes
+  </button>
+</div>
+
+      </div>
+    )}
+
+    {seccionActiva === "carga" && (
       <>
-<div style={{ backgroundColor: "#fff", padding: 25, borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: 30 }}>
+       <div style={{ backgroundColor: "#fff", padding: 25, borderRadius: 10, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", marginBottom: 30 }}>
   <h2 style={{ fontFamily: "Arial, sans-serif", marginBottom: 5 }}>Intranet Negocios</h2>
   <p style={{ fontFamily: "Arial, sans-serif" }}>Bienvenido al sistema de control de ingresos.</p>
 </div>
@@ -716,6 +829,39 @@ return (
   <h3>📈 Evolución acumulada diaria por negocio (mes actual)</h3>
   <Line
     data={generarEvolucionDiariaAcumulada()}
+    options={{
+      responsive: true,
+      plugins: {
+        legend: { position: "top" },
+        tooltip: {
+          callbacks: {
+            label: function (context) {
+              return `${context.dataset.label}: $${parseInt(context.raw).toLocaleString("es-AR")}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: value => "$" + value.toLocaleString("es-AR")
+          }
+        },
+        x: {
+          ticks: {
+            autoSkip: true,
+            maxTicksLimit: 15
+          }
+        }
+      }
+    }}
+  />
+</div>
+<div style={{ maxWidth: "100%", marginTop: 40 }}>
+  <h3>📉 Facturación diaria por negocio (mes actual)</h3>
+  <Line
+    data={generarFacturacionDiariaPorNegocio()}
     options={{
       responsive: true,
       plugins: {
@@ -1374,8 +1520,28 @@ await addDoc(collection(db, "registros"), nuevoRegistro);
 
 
   </div>
+        <button style={{ marginTop: 30 }} onClick={() => setSeccionActiva("dashboard")}>⬅️ Volver al Dashboard</button>
       </>
     )}
+
+    {seccionActiva === "ventas" && (
+      <div>
+        <h3>💰 Sección de Ventas y Costos</h3>
+        <p>Próximamente...</p>
+        <button onClick={() => setSeccionActiva("dashboard")}>⬅️ Volver al Dashboard</button>
+      </div>
+    )}
+
+    {seccionActiva === "informes" && (
+      <div>
+        <h3>📈 Sección de Informes</h3>
+        <p>Próximamente...</p>
+        <button onClick={() => setSeccionActiva("dashboard")}>⬅️ Volver al Dashboard</button>
+      </div>
+    )}
+  </>
+)}
+
     
   </div>
   
