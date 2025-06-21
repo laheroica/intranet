@@ -593,6 +593,20 @@ const toggleNegocio = (nombre) => {
     [nombre]: !prev[nombre]
   }));
 };
+const [mesSeleccionado, setMesSeleccionado] = useState("");
+const [registrosFiltradosInforme, setRegistrosFiltradosInforme] = useState([]);
+const filtrarInformesPorMes = () => {
+  if (!mesSeleccionado) return;
+
+  const [anio, mes] = mesSeleccionado.split("-");
+  const registrosFiltrados = registros.filter((r) => {
+    const [d, m, a] = r.fecha.split("/").map(Number);
+    return parseInt(m) === parseInt(mes) && parseInt(a) === parseInt(anio);
+  });
+
+  setRegistrosFiltradosInforme(registrosFiltrados);
+};
+
 
 return (
 <div style={{ padding: 40, fontFamily: "Arial, sans-serif", backgroundColor: "#f9f9f9" }}>
@@ -1532,13 +1546,210 @@ await addDoc(collection(db, "registros"), nuevoRegistro);
       </div>
     )}
 
-    {seccionActiva === "informes" && (
-      <div>
-        <h3>📈 Sección de Informes</h3>
-        <p>Próximamente...</p>
-        <button onClick={() => setSeccionActiva("dashboard")}>⬅️ Volver al Dashboard</button>
-      </div>
+{seccionActiva === "informes" && (
+  <div style={{ padding: 30 }}>
+    <h2>📊 Informes Mensuales</h2>
+
+    <label>Seleccioná el mes:</label><br />
+    <input
+      type="month"
+      value={mesSeleccionado}
+      onChange={(e) => setMesSeleccionado(e.target.value)}
+      style={{ marginBottom: 20 }}
+    />
+    <button onClick={filtrarInformesPorMes} style={{ marginLeft: 10 }}>
+      Ver informe
+    </button>
+    <button style={{ marginLeft: 20 }} onClick={() => setSeccionActiva("dashboard")}>
+      ⬅️ Volver al Dashboard
+    </button>
+
+    {registrosFiltradosInforme.length > 0 && (
+      <>
+        <div style={{ marginTop: 30 }}>
+          <h3>🔢 Acumulado del mes</h3>
+          <ul>
+            {Object.entries(
+              registrosFiltradosInforme.reduce((acc, r) => {
+                if (!acc[r.negocio]) acc[r.negocio] = 0;
+                acc[r.negocio] += parseInt(r.totalDia || 0);
+                return acc;
+              }, {})
+            ).map(([neg, total]) => (
+              <li key={neg}><strong>{neg}</strong>: {formatoMoneda(total)}</li>
+            ))}
+          </ul>
+        </div>
+
+        <div style={{ marginTop: 30 }}>
+          <h3>💳 Medios de pago del mes</h3>
+          <ul>
+            {Object.entries(
+              registrosFiltradosInforme.reduce((acc, r) => {
+                Object.entries(r).forEach(([k, v]) => {
+                  if (mediosTodos.includes(k)) {
+                    if (!acc[k]) acc[k] = 0;
+                    acc[k] += parseInt(v || 0);
+                  }
+                });
+                return acc;
+              }, {})
+            ).map(([medio, total]) => (
+              <li key={medio}><strong>{medio}</strong>: {formatoMoneda(total)}</li>
+            ))}
+          </ul>
+        </div>
+
+        {/* EVOLUCIÓN ACUMULADA POR NEGOCIO */}
+        <div style={{ marginTop: 40 }}>
+          <h3>📈 Evolución acumulada diaria por negocio</h3>
+          <Line
+            data={(() => {
+              const ahora = new Date(mesSeleccionado + "-01");
+              const anio = ahora.getFullYear();
+              const mes = ahora.getMonth();
+              const dias = new Date(anio, mes + 1, 0).getDate();
+
+              const labels = Array.from({ length: dias }, (_, i) =>
+                `${String(i + 1).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`
+              );
+
+              const datos = {};
+              negocios.forEach(n => datos[n] = Array(dias).fill(0));
+
+              registrosFiltradosInforme.forEach(r => {
+                const [d, m, y] = r.fecha.split("/").map(Number);
+                const index = d - 1;
+                if (datos[r.negocio] && index >= 0) {
+                  const total = mediosTodos.reduce((sum, m) => sum + parseInt(r[m] || 0), 0);
+                  datos[r.negocio][index] += total;
+                }
+              });
+
+              negocios.forEach(n => {
+                for (let i = 1; i < dias; i++) {
+                  datos[n][i] += datos[n][i - 1];
+                }
+              });
+
+              return {
+                labels,
+                datasets: negocios.map((n, i) => ({
+                  label: n,
+                  data: datos[n],
+                  borderColor: colores[i % colores.length],
+                  backgroundColor: colores[i % colores.length],
+                  fill: false,
+                  tension: 0.3,
+                  borderWidth: 2
+                }))
+              };
+            })()}
+            options={{
+              responsive: true,
+              plugins: { legend: { position: "top" } },
+              scales: {
+                y: {
+                  ticks: {
+                    callback: value => "$" + value.toLocaleString("es-AR")
+                  }
+                }
+              }
+            }}
+          />
+        </div>
+        {/* FACTURACIÓN DIARIA POR NEGOCIO */}
+        <div style={{ marginTop: 40 }}>
+          <h3>📉 Facturación diaria por negocio</h3>
+          <Line
+            data={(() => {
+              const ahora = new Date(mesSeleccionado + "-01");
+              const anio = ahora.getFullYear();
+              const mes = ahora.getMonth();
+              const dias = new Date(anio, mes + 1, 0).getDate();
+
+              const labels = Array.from({ length: dias }, (_, i) =>
+                `${String(i + 1).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`
+              );
+
+              const datos = {};
+              negocios.forEach(n => datos[n] = Array(dias).fill(0));
+
+              registrosFiltradosInforme.forEach(r => {
+                const [d, m, y] = r.fecha.split("/").map(Number);
+                const index = d - 1;
+                if (datos[r.negocio] && index >= 0) {
+                  const total = mediosTodos.reduce((sum, m) => sum + parseInt(r[m] || 0), 0);
+                  datos[r.negocio][index] += total;
+                }
+              });
+
+              return {
+                labels,
+                datasets: negocios.map((n, i) => ({
+                  label: n,
+                  data: datos[n],
+                  borderColor: colores[i % colores.length],
+                  backgroundColor: colores[i % colores.length],
+                  fill: false,
+                  tension: 0.3,
+                  borderWidth: 2
+                }))
+              };
+            })()}
+            options={{
+              responsive: true,
+              plugins: { legend: { position: "top" } },
+              scales: {
+                y: {
+                  ticks: {
+                    callback: value => "$" + value.toLocaleString("es-AR")
+                  }
+                }
+              }
+            }}
+          />
+        </div>
+
+        {/* FACTURACIÓN MENSUAL FINAL */}
+        <div style={{ marginTop: 40 }}>
+          <h3>📊 Facturación mensual por negocio</h3>
+          <Line
+            data={{
+              labels: negocios,
+              datasets: [{
+                label: "Facturación total",
+                data: negocios.map(n =>
+                  registrosFiltradosInforme
+                    .filter(r => r.negocio === n)
+                    .reduce((acc, r) => acc + parseInt(r.totalDia || 0), 0)
+                ),
+                borderColor: "#36A2EB",
+                backgroundColor: "#36A2EB",
+                fill: false,
+                tension: 0.3,
+                borderWidth: 3,
+                pointRadius: 5
+              }]
+            }}
+            options={{
+              responsive: true,
+              plugins: { legend: { display: true, position: "top" } },
+              scales: {
+                y: {
+                  ticks: {
+                    callback: value => "$" + value.toLocaleString("es-AR")
+                  }
+                }
+              }
+            }}
+          />
+        </div>
+      </>
     )}
+  </div>
+)}
+
   </>
 )}
 
