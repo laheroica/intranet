@@ -340,11 +340,20 @@ const eliminarRegistro = async (id) => {
   }
 };
 const registrosOrdenados = () => {
-  return [...registros].sort((a, b) => {
-    const [da, ma, aa] = a.fecha.split("/").map(Number);
-    const [db, mb, ab] = b.fecha.split("/").map(Number);
-    return new Date(`${ab}-${mb}-${db}`) - new Date(`${aa}-${ma}-${da}`); // orden descendente: más nuevo primero
-  });
+  const ahora = new Date();
+  const mesActual = ahora.getMonth() + 1;
+  const anioActual = ahora.getFullYear();
+
+  return [...registros]
+    .filter(r => {
+      const [d, m, a] = r.fecha.split("/").map(Number);
+      return m === mesActual && a === anioActual;
+    })
+    .sort((a, b) => {
+      const [da, ma, aa] = a.fecha.split("/").map(Number);
+      const [db, mb, ab] = b.fecha.split("/").map(Number);
+      return new Date(`${ab}-${mb}-${db}`) - new Date(`${aa}-${ma}-${da}`);
+    });
 };
 
 
@@ -1745,10 +1754,81 @@ await addDoc(collection(db, "registros"), nuevoRegistro);
             }}
           />
         </div>
+        {registrosFiltradosInforme.length > 0 && (
+  <>
+    <h3 style={{ marginTop: 40 }}>📄 Registros individuales del mes seleccionado</h3>
+
+    {negocios.map((neg) => {
+      const registrosNegocio = [...registrosFiltradosInforme]
+        .filter(r => r.negocio === neg)
+        .sort((a, b) => {
+          const [da, ma, aa] = a.fecha.split("/").map(Number);
+          const [db, mb, ab] = b.fecha.split("/").map(Number);
+          return new Date(`${aa}-${ma}-${da}`) - new Date(`${ab}-${mb}-${db}`);
+        });
+
+      if (registrosNegocio.length === 0) return null;
+
+      return (
+        <div key={neg} style={{ marginBottom: 20 }}>
+          <h4>{neg}</h4>
+          <table
+            border="1"
+            cellPadding="5"
+            style={{
+              width: "100%",
+              maxWidth: "700px",
+              borderCollapse: "collapse",
+              fontFamily: "Arial, sans-serif"
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#ddd" }}>
+                <th>Fecha</th>
+                {mediosTodos.map(m => (
+                  <th key={m}>{m}</th>
+                ))}
+                <th>Total del día</th>
+              </tr>
+            </thead>
+            <tbody>
+              {registrosNegocio.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.fecha}</td>
+                  {mediosTodos.map(m => {
+                    const noAplica = !mediosPorNegocio[r.negocio].includes(m);
+                    return (
+                      <td
+                        key={m}
+                        style={{
+                          background: noAplica ? "#ddd" : "",
+                          color: noAplica ? "#999" : "",
+                          textAlign: "right"
+                        }}
+                      >
+                        {r[m] ? formatoMoneda(r[m]) : (noAplica ? "–" : "-")}
+                      </td>
+                    );
+                  })}
+                  <td style={{ textAlign: "right" }}>
+                    <strong>{formatoMoneda(r.totalDia)}</strong>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    })}
+  </>
+)}
+
       </>
     )}
   </div>
+  
 )}
+
 
   </>
 )}
