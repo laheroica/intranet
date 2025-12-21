@@ -632,7 +632,7 @@ const generarFacturacionDiariaPorNegocio = () => {
   };
 };
 
-const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", "Alquileres"];
+const negocios = ["Felizcitas", "Terrazas", "El Pupular",  "Athlon 107", "Athlon 24", "Juegos", "Xtras", "Alquileres"];
 const [negociosExpandido, setNegociosExpandido] = useState(() =>
   negocios.reduce((acc, n) => ({ ...acc, [n]: false }), {})
 );
