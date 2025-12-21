@@ -107,14 +107,45 @@ const calcularAcumulados = () => {
 
 
 
-  const mediosPorNegocio = {
-    Felizcitas: ["Efectivo", "TB Alvaro", "TB Deni", "TB Moni", "MP Alvaro", "MP Deni", "MP Moni", "BLP", "BNA"],
-    Terrazas: ["Efectivo", "Débito", "Crédito", "QR"],
-    "Athlon 107": ["Efectivo", "MP Alvaro"],
-    "Athlon 24": ["Efectivo", "MP Deni"],
-    Alquileres: ["Efectivo"],
-    Xtras: ["Efectivo"],
-  };
+ const mediosPorNegocio = {
+  Felizcitas: [
+    "Efectivo",
+    "TB Alvaro",
+    "TB Deni",
+    "TB Moni",
+    "MP Alvaro",
+    "MP Deni",
+    "MP Moni",
+    "BLP",
+    "BNA"
+  ],
+
+  Terrazas: [
+    "Efectivo",
+    "Débito",
+    "Crédito",
+    "Prepaga",   // 👈 ACÁ AGREGAMOS PREPAGA
+    "QR"
+  ],
+
+  "El Popular": [
+    "Efectivo",
+    "Débito",
+    "Crédito",
+    "Prepaga",   // 👈 mismo esquema que Terrazas
+    "QR"
+  ],
+
+  "Athlon 107": ["Efectivo", "MP Alvaro"],
+  "Athlon 24": ["Efectivo", "MP Deni"],
+
+  Alquileres: ["Efectivo"],
+
+  Juegos: ["Efectivo"],
+
+  Xtras: ["Efectivo"]
+};
+
 
   const mediosTodos = Array.from(new Set(Object.values(mediosPorNegocio).flat()));
 useEffect(() => {
@@ -501,7 +532,16 @@ const generarEvolucionDiariaAcumulada = () => {
   const anio = ahora.getFullYear();
   const mes = ahora.getMonth(); // 0-indexed
 
-  const negocios = ["Felizcitas", "Terrazas", "Athlon 107", "Athlon 24", "Xtras", "Alquileres"];
+const negocios = [
+  "Felizcitas",
+  "Terrazas",
+  "El Popular",
+  "Athlon 107",
+  "Athlon 24",
+  "Xtras",
+  "Alquileres",
+  "Juegos"
+];
   const diasDelMes = new Date(anio, mes + 1, 0).getDate();
 
   const fechas = Array.from({ length: diasDelMes }, (_, i) => {
