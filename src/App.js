@@ -813,9 +813,11 @@ return (
     {[
       "Felizcitas",
       "Terrazas",
+      "El Popular",
       "Athlon 107",
       "Athlon 24",
       "Xtras",
+      "Juegos",
       "Alquileres"
     ].map((neg) => (
       <li key={neg} style={{ marginBottom: 5 }}>
@@ -961,9 +963,11 @@ return (
       labels: [
         "Felizcitas",
         "Terrazas",
+        "El Popular",
         "Athlon 107",
         "Athlon 24",
         "Xtras",
+        "Juegos",
         "Alquileres"
       ],
       datasets: [
@@ -972,9 +976,11 @@ return (
           data: [
             totalesMesActual["Felizcitas"] || 0,
             totalesMesActual["Terrazas"] || 0,
+            totalesMesActual["El Popular"] || 0,
             totalesMesActual["Athlon 107"] || 0,
             totalesMesActual["Athlon 24"] || 0,
             totalesMesActual["Xtras"] || 0,
+            totalesMesActual["Juegos"] || 0,
             totalesMesActual["Alquileres"] || 0
           ],
           borderColor: "#36A2EB",
