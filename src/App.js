@@ -724,7 +724,7 @@ export default function App() {
             onChange={e => setPassword(e.target.value)}
             onKeyDown={e => {
               if (e.key === "Enter") {
-                const usuario = USUARIOS[username];
+                const usuario = USUARIOS[username.toLowerCase()];
                 if (usuario && usuario.password === password) {
                   setIsLoggedIn(true); setRolActual(usuario.rol);
                 } else { alert("Usuario o contraseña incorrectos"); }
@@ -734,7 +734,7 @@ export default function App() {
           <button
             style={S.btnPrimary}
             onClick={() => {
-              const usuario = USUARIOS[username];
+              const usuario = USUARIOS[username.toLowerCase()];
               if (usuario && usuario.password === password) {
                 setIsLoggedIn(true); setRolActual(usuario.rol);
               } else { alert("Usuario o contraseña incorrectos"); }
