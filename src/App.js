@@ -73,9 +73,11 @@ const TEMAS = {
 
 // ─── Credenciales ─────────────────────────────────────────────────────────────
 const USUARIOS = {
-  admin: { password: "119988442", rol: "admin" },
-  // Podés agregar más usuarios con rol "viewer" si querés
+  admin: { password: "11998844", rol: "admin" },
+  pame: { password: "Castresana2020", rol: "cargador" },
 };
+
+const NEGOCIOS_CARGADOR = ["Felizcitas", "Athlon 107", "Athlon 24"];
 
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -146,6 +148,7 @@ export default function App() {
 
   const mediosTodos = Array.from(new Set(Object.values(mediosPorNegocio).flat()));
   const negocios = Object.keys(mediosPorNegocio);
+  const negociosPermitidos = rolActual === "cargador" ? NEGOCIOS_CARGADOR : negocios;
 
   const colores = [
     "#4f8ef7", "#2ecc71", "#f39c12", "#e74c3c",
@@ -793,11 +796,11 @@ export default function App() {
                 Mes actual
               </h3>
               <div style={S.totalGrande}>
-                {formatoMoneda(Object.values(totalesMesActual).reduce((acc, v) => acc + parseInt(v || 0), 0))}
+                {formatoMoneda(negociosPermitidos.reduce((acc, n) => acc + parseInt(totalesMesActual[n] || 0), 0))}
               </div>
               <p style={{ color: t.textoSuave, fontSize: 13, margin: "4px 0 16px" }}>Total general</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {negocios.map(neg => (
+                {negociosPermitidos.map(neg => (
                   totalesMesActual[neg] ? (
                     <div key={neg} style={{ backgroundColor: t.superficie2, borderRadius: 10, padding: "10px 12px" }}>
                       <p style={{ fontSize: 12, color: t.textoSuave, margin: "0 0 2px" }}>{neg}</p>
@@ -808,7 +811,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Acumulado año */}
+            {/* Acumulado año — solo admin */}
+            {rolActual === "admin" && (
             <div style={S.card}>
               <h3 style={{ margin: "0 0 8px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
                 Acumulado del año
@@ -822,9 +826,10 @@ export default function App() {
                 )}
               </div>
             </div>
+            )}
 
-            {/* Medios de pago del mes */}
-            {acumuladosPorMedioMes.length > 0 && (
+            {/* Medios de pago del mes — solo admin */}
+            {rolActual === "admin" && acumuladosPorMedioMes.length > 0 && (
               <div style={S.card}>
                 <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
                   💳 Medios de pago del mes
@@ -838,8 +843,8 @@ export default function App() {
               </div>
             )}
 
-            {/* Gráfico evolución */}
-            <div style={S.card}>
+            {/* Gráfico evolución — solo admin */}
+            {rolActual === "admin" && <div style={S.card}>
               <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase" }}>
                 📈 Evolución del mes
               </h3>
@@ -857,13 +862,14 @@ export default function App() {
                 />
               </div>
             </div>
+            }
 
             {/* Último registro por negocio */}
             <div style={S.card}>
               <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase" }}>
                 📅 Último registro por negocio
               </h3>
-              {negocios.map((neg, i) => (
+              {negociosPermitidos.map((neg, i) => (
                 <div key={neg} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${t.borde}` }}>
                   <span style={{ fontSize: 14 }}>{neg}</span>
                   <span style={{ fontSize: 13, color: ultimosDiasPorNegocio[neg] ? t.exito : t.peligro, fontWeight: 600 }}>
@@ -924,7 +930,7 @@ export default function App() {
                   <label style={S.label}>Negocio</label>
                   <select style={S.select} value={negocio} onChange={e => setNegocio(e.target.value)}>
                     <option value="">Seleccionar negocio...</option>
-                    {Object.keys(mediosPorNegocio).map(n => (
+                    {negociosPermitidos.map(n => (
                       <option key={n} value={n}>{n}</option>
                     ))}
                   </select>
@@ -939,9 +945,9 @@ export default function App() {
                       pattern="[0-9]*"
                       placeholder="0"
                       style={S.input}
-                      value={formData[medio] || ""}
+                      value={formData[medio]||""}
                       onChange={e => {
-                        if (/^\d{0,10}$/.test(e.target.value)) {
+                        if (/^\d{0,10}$/.test(e.target.value.replace(/\./g,""))) {
                           setFormData({ ...formData, [medio]: e.target.value });
                           setErrors({ ...errors, [medio]: false });
                         } else {
@@ -971,7 +977,6 @@ export default function App() {
                       const [anio, mes, dia] = fechaSeleccionada.split("-");
                       const fechaFormateada = `${dia}/${mes}/${anio}`;
                       const duplicado = registros.find(r => r.fecha === fechaFormateada && r.negocio === negocio);
-                      if (duplicado) { alert(`Ya existe un registro para ${negocio} el ${fechaFormateada}`); return; }
                       const totalDia = Object.entries(formData).reduce((sum, [, val]) => sum + parseInt(val || 0), 0);
                       await addDoc(collection(db, "registros"), { fecha: fechaFormateada, negocio, totalDia, ...formData });
                       setFormData({}); setNegocio(""); setFechaSeleccionada("");
@@ -1020,7 +1025,7 @@ export default function App() {
             {/* Registros del mes actual */}
             <div id="registros-individuales">
               <h3 style={{ ...S.sectionTitle }}>📋 Mes actual</h3>
-              {negocios.map(negAg => {
+              {negociosPermitidos.map(negAg => {
                 const regsNeg = registrosOrdenados().filter(r => r.negocio === negAg);
                 if (regsNeg.length === 0) return null;
                 return (
