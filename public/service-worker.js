@@ -1,5 +1,5 @@
 /* service-worker.js — Intranet Negocios PWA */
-const CACHE_NAME = 'intranet-v1';
+const CACHE_NAME = 'intranet-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',

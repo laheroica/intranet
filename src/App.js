@@ -1,5 +1,4 @@
-import React from "react";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { db } from "./firebase";
 import {
   collection,
@@ -13,17 +12,18 @@ import {
 import {
   Chart as ChartJS,
   LineElement,
+  BarElement,
   PointElement,
   LinearScale,
   CategoryScale,
   Legend,
   Tooltip
 } from "chart.js";
-import { Line } from "react-chartjs-2";
+import { Line, Bar } from "react-chartjs-2";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
 
-ChartJS.register(LineElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip);
+ChartJS.register(LineElement, BarElement, PointElement, LinearScale, CategoryScale, Legend, Tooltip);
 
 // ─── Registrar Service Worker (PWA) ───────────────────────────────────────────
 if ("serviceWorker" in navigator) {
@@ -79,6 +79,13 @@ const USUARIOS = {
 
 const NEGOCIOS_CARGADOR = ["Felizcitas", "Athlon 107", "Athlon 24"];
 
+const NOMBRES_MESES = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"
+];
+
+const DIAS_SEMANA = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -114,25 +121,33 @@ export default function App() {
   const [filtroMediosMulti, setFiltroMediosMulti] = useState([]);
   const [acumulados, setAcumulados] = useState([]);
   const [acumuladosPorMedioMes, setAcumuladosPorMedioMes] = useState([]);
-  const [mostrarDetalleGrafico, setMostrarDetalleGrafico] = useState(false);
   const [detalleDiario, setDetalleDiario] = useState([]);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [idEnEdicion, setIdEnEdicion] = useState(null);
   const [mostrarCargaDia, setMostrarCargaDia] = useState(false);
-  const [filtroGraficoNegocio, setFiltroGraficoNegocio] = useState("todos");
   const [seccionActiva, setSeccionActiva] = useState("dashboard");
   const [ultimosDiasPorNegocio, setUltimosDiasPorNegocio] = useState({});
   const [registrosFiltrados, setRegistrosFiltrados] = useState([]);
   const [ultimaFechaGlobal, setUltimaFechaGlobal] = useState(null);
   const [negociosExpandido, setNegociosExpandido] = useState({});
-  const [mesSelecionado, setMesSelecionado] = useState("");
-  const [registrosFiltradosInforme, setRegistrosFiltradosInforme] = useState([]);
 
-  // ── NUEVO: búsqueda para editar meses anteriores ──────────────────────────
-  const [buscarFechaEdicion, setBuscarFechaEdicion] = useState("");
-  const [buscarNegocioEdicion, setBuscarNegocioEdicion] = useState("");
-  const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
-  const [mostrarBuscador, setMostrarBuscador] = useState(false);
+  // ── Edición y Búsqueda por Mes/Año ─────────────────────────────────────────
+  const [buscarMesAnioEdicion, setBuscarMesAnioEdicion] = useState(() => {
+    const a = new Date();
+    return `${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [buscarNegocioEdicion, setBuscarNegocioEdicion] = useState("todos");
+
+  // ── Evolución Anual ────────────────────────────────────────────────────────
+  const [anioEvolucion, setAnioEvolucion] = useState(() => new Date().getFullYear());
+  const [negocioEvolucion, setNegocioEvolucion] = useState("todos");
+
+  // ── Gráfico Diario del Mes ──────────────────────────────────────────────────
+  const [mesDiario, setMesDiario] = useState(() => {
+    const a = new Date();
+    return `${a.getFullYear()}-${String(a.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [negocioDiario, setNegocioDiario] = useState("todos");
 
   // ─── Negocios y medios ────────────────────────────────────────────────────
   const mediosPorNegocio = {
@@ -165,7 +180,6 @@ export default function App() {
       setFiltroFechaDesde(inicio.toISOString().split("T")[0]);
       setFiltroNegociosMulti(Object.keys(mediosPorNegocio));
       setFiltroMediosMulti(mediosTodos);
-      setMostrarDetalleGrafico(true);
       setNegociosExpandido(negocios.reduce((acc, n) => ({ ...acc, [n]: false }), {}));
     }
   }, [isLoggedIn]);
@@ -309,43 +323,13 @@ export default function App() {
     setDetalleDiario(result);
   };
 
-  // ─── NUEVA función: buscar registros para editar ──────────────────────────
-  const buscarParaEditar = () => {
-    let resultados = [...registros];
-    if (buscarFechaEdicion) {
-      // acepta formato YYYY-MM o DD/MM/YYYY parcial
-      if (buscarFechaEdicion.includes("-")) {
-        // formato YYYY-MM (mes completo)
-        const [anio, mes] = buscarFechaEdicion.split("-").map(Number);
-        resultados = resultados.filter(r => {
-          const [d, m, a] = r.fecha.split("/").map(Number);
-          return m === mes && a === anio;
-        });
-      } else {
-        // texto libre
-        resultados = resultados.filter(r => r.fecha.includes(buscarFechaEdicion));
-      }
-    }
-    if (buscarNegocioEdicion) {
-      resultados = resultados.filter(r =>
-        r.negocio.toLowerCase().includes(buscarNegocioEdicion.toLowerCase())
-      );
-    }
-    // Ordenar más reciente primero
-    resultados.sort((a, b) => {
-      const [da, ma, aa] = a.fecha.split("/").map(Number);
-      const [db2, mb, ab] = b.fecha.split("/").map(Number);
-      return new Date(`${ab}-${mb}-${db2}`) - new Date(`${aa}-${ma}-${da}`);
-    });
-    setResultadosBusqueda(resultados.slice(0, 50)); // máx 50 resultados
-  };
-
   // ─── CRUD ─────────────────────────────────────────────────────────────────
   const eliminarRegistro = async (id) => {
-    if (!window.confirm("¿Eliminar este registro?")) return;
+    if (!window.confirm("¿Eliminar este registro de caja?")) return;
     try {
       await deleteDoc(doc(db, "registros", id));
       cargarRegistros();
+      alert("✅ Registro eliminado correctamente");
     } catch (error) {
       alert("❌ Error al eliminar.");
     }
@@ -401,6 +385,7 @@ export default function App() {
     return { totalGeneral, promedio: cantidadDias > 0 ? totalGeneral / cantidadDias : 0, cantidadDias, cantidadRegistros: acumulados.length };
   };
 
+  // ─── EXPORTACIÓN EXCEL ────────────────────────────────────────────────────
   const exportarTablaAExcel = () => {
     const datosParaExcel = [];
     Object.entries(
@@ -430,54 +415,160 @@ export default function App() {
     saveAs(new Blob([blob]), "registros_negocios.xlsx");
   };
 
-  const filtrarInformesPorMes = () => {
-    if (!mesSelecionado) return;
-    const [anio, mes] = mesSelecionado.split("-");
-    setRegistrosFiltradosInforme(
-      registros.filter(r => {
-        const [d, m, a] = r.fecha.split("/").map(Number);
-        return parseInt(m) === parseInt(mes) && parseInt(a) === parseInt(anio);
-      })
-    );
-  };
+  // ─── EXPORTACIÓN A PDF POR EMPRESA ────────────────────────────────────────
+  const exportarPdfEmpresa = (negocioSel, mesAnioStr) => {
+    let anio, mes;
+    if (mesAnioStr && mesAnioStr.includes("-")) {
+      [anio, mes] = mesAnioStr.split("-").map(Number);
+    } else {
+      const ahora = new Date();
+      anio = ahora.getFullYear();
+      mes = ahora.getMonth() + 1;
+    }
 
-  const generarEvolucionDiariaAcumulada = () => {
-    const ahora = new Date();
-    const anio = ahora.getFullYear();
-    const mes = ahora.getMonth();
-    const diasDelMes = new Date(anio, mes + 1, 0).getDate();
-    const fechas = Array.from({ length: diasDelMes }, (_, i) => {
-      return `${String(i + 1).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`;
-    });
-    const acumuladoPorNegocio = {};
-    negocios.forEach(n => { acumuladoPorNegocio[n] = Array(diasDelMes).fill(0); });
-    registros.forEach(r => {
-      const [d, m, y] = r.fecha.split("/").map(Number);
-      if (m === mes + 1 && y === anio && negocios.includes(r.negocio)) {
-        const total = Object.entries(r).filter(([k]) => mediosTodos.includes(k)).reduce((sum, [, v]) => sum + parseInt(v || 0), 0);
-        acumuladoPorNegocio[r.negocio][d - 1] += total;
-      }
-    });
-    negocios.forEach(n => { for (let i = 1; i < diasDelMes; i++) acumuladoPorNegocio[n][i] += acumuladoPorNegocio[n][i - 1]; });
-    return { labels: fechas, datasets: negocios.map((n, i) => ({ label: n, data: acumuladoPorNegocio[n], borderColor: colores[i % colores.length], backgroundColor: colores[i % colores.length], fill: false, tension: 0.3, borderWidth: 2, pointRadius: 3 })) };
-  };
+    const nombreMes = NOMBRES_MESES[mes - 1] || "";
+    const negocioNombre = negocioSel && negocioSel !== "todos" ? negocioSel : "Todas las Empresas";
 
-  const generarFacturacionDiariaPorNegocio = () => {
-    const ahora = new Date();
-    const anio = ahora.getFullYear();
-    const mes = ahora.getMonth();
-    const diasDelMes = new Date(anio, mes + 1, 0).getDate();
-    const fechas = Array.from({ length: diasDelMes }, (_, i) => `${String(i + 1).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`);
-    const facturacion = {};
-    negocios.forEach(n => { facturacion[n] = Array(diasDelMes).fill(0); });
-    registros.forEach(r => {
-      const [d, m, y] = r.fecha.split("/").map(Number);
-      if (m === mes + 1 && y === anio && negocios.includes(r.negocio)) {
-        const total = Object.entries(r).filter(([k]) => mediosTodos.includes(k)).reduce((sum, [, v]) => sum + parseInt(v || 0), 0);
-        facturacion[r.negocio][d - 1] += total;
-      }
+    const registrosPeriodo = registros.filter(r => {
+      const [d, m, a] = r.fecha.split("/").map(Number);
+      const matchNeg = !negocioSel || negocioSel === "todos" || r.negocio === negocioSel;
+      return m === mes && a === anio && matchNeg;
     });
-    return { labels: fechas, datasets: negocios.map((n, i) => ({ label: n, data: facturacion[n], borderColor: colores[i % colores.length], backgroundColor: colores[i % colores.length], fill: false, tension: 0.3, borderWidth: 2, pointRadius: 3 })) };
+
+    registrosPeriodo.sort((a, b) => {
+      const [da] = a.fecha.split("/").map(Number);
+      const [db2] = b.fecha.split("/").map(Number);
+      return da - db2;
+    });
+
+    const mediosAmostrar = negocioSel && negocioSel !== "todos" && mediosPorNegocio[negocioSel]
+      ? mediosPorNegocio[negocioSel]
+      : mediosTodos;
+
+    const subtotalesMedios = {};
+    mediosAmostrar.forEach(m => subtotalesMedios[m] = 0);
+    let totalGeneralMes = 0;
+
+    registrosPeriodo.forEach(r => {
+      mediosAmostrar.forEach(m => {
+        const val = parseInt(r[m] || 0, 10);
+        subtotalesMedios[m] += val;
+      });
+      totalGeneralMes += parseInt(r.totalDia || 0, 10);
+    });
+
+    const cantDias = new Set(registrosPeriodo.map(r => r.fecha)).size;
+    const promedioDiario = cantDias > 0 ? Math.round(totalGeneralMes / cantDias) : 0;
+
+    const win = window.open("", "_blank");
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Reporte ${negocioNombre} - ${nombreMes} ${anio}</title>
+        <style>
+          body { font-family: 'Segoe UI', Arial, sans-serif; color: #1e293b; padding: 25px; background: #fff; line-height: 1.4; }
+          .no-print { margin-bottom: 20px; text-align: right; }
+          .btn-print { padding: 12px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer; font-size: 14px; }
+          .header { border-bottom: 3px solid #2563eb; padding-bottom: 14px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+          .title { font-size: 24px; font-weight: 800; color: #0f172a; margin: 0; }
+          .subtitle { font-size: 14px; color: #64748b; margin-top: 4px; }
+          .kpis { display: flex; gap: 15px; margin-bottom: 25px; }
+          .kpi-card { flex: 1; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; text-align: center; }
+          .kpi-title { font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: 0.5px; }
+          .kpi-value { font-size: 20px; font-weight: 800; color: #2563eb; margin-top: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+          th { background: #1e293b; color: #ffffff; padding: 9px 10px; text-align: left; font-weight: 700; font-size: 11px; text-transform: uppercase; }
+          td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+          tr:nth-child(even) { background: #f8fafc; }
+          .total-row { background: #e2e8f0 !important; font-weight: 800; font-size: 13px; }
+          .text-right { text-align: right; }
+          @media print {
+            body { padding: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="no-print">
+          <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+        </div>
+        <div class="header">
+          <div>
+            <h1 class="title">📊 Reporte de Ingresos de Caja</h1>
+            <div class="subtitle"><strong>Empresa / Negocio:</strong> ${negocioNombre} | <strong>Período:</strong> ${nombreMes} ${anio}</div>
+          </div>
+          <div style="text-align: right; font-size: 11px; color: #64748b;">
+            Emisión: ${new Date().toLocaleDateString("es-AR")} ${new Date().toLocaleTimeString("es-AR", { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        </div>
+
+        <div class="kpis">
+          <div class="kpi-card">
+            <div class="kpi-title">Total Facturado</div>
+            <div class="kpi-value">$${totalGeneralMes.toLocaleString("es-AR")}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Promedio Diario</div>
+            <div class="kpi-value">$${promedioDiario.toLocaleString("es-AR")}</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-title">Días Registrados</div>
+            <div class="kpi-value">${cantDias} días</div>
+          </div>
+        </div>
+
+        <h3 style="font-size: 15px; margin: 20px 0 8px; color: #0f172a;">💳 Desglose por Medio de Pago</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Medio de Pago</th>
+              <th class="text-right">Monto Recaudado</th>
+              <th class="text-right">% Parte del Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${mediosAmostrar.map(m => {
+              const val = subtotalesMedios[m] || 0;
+              const pct = totalGeneralMes > 0 ? ((val / totalGeneralMes) * 100).toFixed(1) : "0.0";
+              return `<tr><td>${m}</td><td class="text-right">$${val.toLocaleString("es-AR")}</td><td class="text-right">${pct}%</td></tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+
+        <h3 style="font-size: 15px; margin: 25px 0 8px; color: #0f172a;">📋 Listado Completo de Cargas Diarias</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              ${negocioSel === "todos" ? '<th>Negocio</th>' : ''}
+              ${mediosAmostrar.map(m => `<th class="text-right">${m}</th>`).join("")}
+              <th class="text-right">Total Día</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${registrosPeriodo.length === 0 ? `<tr><td colSpan="${mediosAmostrar.length + 2}" style="text-align:center; padding: 20px; color: #64748b;">No hay registros cargados para este período.</td></tr>` : ''}
+            ${registrosPeriodo.map(r => `
+              <tr>
+                <td>${r.fecha}</td>
+                ${negocioSel === "todos" ? `<td>${r.negocio}</td>` : ''}
+                ${mediosAmostrar.map(m => `<td class="text-right">${r[m] ? '$' + parseInt(r[m]).toLocaleString("es-AR") : '-'}</td>`).join("")}
+                <td class="text-right" style="font-weight: 700; color: #16a34a;">$${parseInt(r.totalDia || 0).toLocaleString("es-AR")}</td>
+              </tr>
+            `).join("")}
+            <tr class="total-row">
+              <td>TOTAL GENERAL</td>
+              ${negocioSel === "todos" ? '<td>-</td>' : ''}
+              ${mediosAmostrar.map(m => `<td class="text-right">$${subtotalesMedios[m].toLocaleString("es-AR")}</td>`).join("")}
+              <td class="text-right" style="color: #2563eb;">$${totalGeneralMes.toLocaleString("es-AR")}</td>
+            </tr>
+          </tbody>
+        </table>
+      </body>
+      </html>
+    `);
+    win.document.close();
   };
 
   const formatoMoneda = (valor) => {
@@ -487,15 +578,13 @@ export default function App() {
 
   // ─── Estilos reutilizables ────────────────────────────────────────────────
   const S = {
-    // Contenedor principal
     app: {
       minHeight: "100vh",
       backgroundColor: t.fondo,
       color: t.texto,
       fontFamily: "'Segoe UI', system-ui, sans-serif",
-      paddingBottom: 80,
+      paddingBottom: 150,
     },
-    // Barra de navegación inferior (mobile-first)
     navBar: {
       position: "fixed",
       bottom: 0,
@@ -505,7 +594,7 @@ export default function App() {
       borderTop: `1px solid ${t.borde}`,
       display: "flex",
       justifyContent: "space-around",
-      padding: "8px 0",
+      padding: "6px 0",
       zIndex: 1000,
       boxShadow: "0 -2px 10px rgba(0,0,0,0.2)"
     },
@@ -514,7 +603,7 @@ export default function App() {
       flexDirection: "column",
       alignItems: "center",
       gap: 2,
-      padding: "6px 16px",
+      padding: "6px 12px",
       borderRadius: 12,
       border: "none",
       background: activo ? t.acento + "22" : "transparent",
@@ -523,9 +612,8 @@ export default function App() {
       fontSize: 11,
       fontWeight: activo ? 700 : 400,
       transition: "all 0.2s",
-      minWidth: 60,
+      minWidth: 55,
     }),
-    // Tarjeta
     card: {
       backgroundColor: t.superficie,
       border: `1px solid ${t.borde}`,
@@ -534,7 +622,6 @@ export default function App() {
       marginBottom: 16,
       boxShadow: modoOscuro ? "0 4px 20px rgba(0,0,0,0.3)" : "0 2px 8px rgba(0,0,0,0.08)"
     },
-    // Input táctil grande
     input: {
       width: "100%",
       padding: "14px 16px",
@@ -546,12 +633,7 @@ export default function App() {
       marginBottom: 12,
       boxSizing: "border-box",
       outline: "none",
-      WebkitAppearance: "none",
     },
-    inputFocus: {
-      border: `1.5px solid ${t.acento}`,
-    },
-    // Select táctil
     select: {
       width: "100%",
       padding: "14px 16px",
@@ -568,11 +650,10 @@ export default function App() {
       backgroundRepeat: "no-repeat",
       backgroundPosition: "right 16px center",
     },
-    // Botón primario grande táctil
     btnPrimary: {
       width: "100%",
-      padding: "16px",
-      fontSize: 16,
+      padding: "14px 16px",
+      fontSize: 15,
       fontWeight: 700,
       borderRadius: 14,
       border: "none",
@@ -582,12 +663,11 @@ export default function App() {
       marginBottom: 10,
       letterSpacing: 0.5,
       transition: "all 0.2s",
-      WebkitTapHighlightColor: "transparent",
     },
     btnSuccess: {
       width: "100%",
-      padding: "16px",
-      fontSize: 16,
+      padding: "14px 16px",
+      fontSize: 15,
       fontWeight: 700,
       borderRadius: 14,
       border: "none",
@@ -626,10 +706,7 @@ export default function App() {
       fontWeight: 600,
       marginRight: 6,
     },
-    // Campo de monto con label
-    campoMonto: {
-      marginBottom: 14,
-    },
+    campoMonto: { marginBottom: 14 },
     label: {
       display: "block",
       fontSize: 13,
@@ -639,40 +716,24 @@ export default function App() {
       textTransform: "uppercase",
       letterSpacing: 0.5,
     },
-    // Total grande
     totalGrande: {
       fontSize: 28,
       fontWeight: 800,
       color: t.acento,
       letterSpacing: -1,
     },
-    // Chip de negocio
-    chip: (color) => ({
-      display: "inline-block",
-      padding: "4px 10px",
-      borderRadius: 20,
-      fontSize: 12,
-      fontWeight: 700,
-      backgroundColor: color + "22",
-      color: color,
-      marginRight: 6,
-      marginBottom: 4,
-    }),
-    // Título de sección
     sectionTitle: {
-      fontSize: 22,
+      fontSize: 20,
       fontWeight: 800,
       marginBottom: 16,
       color: t.texto,
     },
-    // Header con padding
     pageHeader: {
-      padding: "24px 20px 12px",
+      padding: "20px 20px 12px",
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
     },
-    // Tabla responsive
     tabla: {
       width: "100%",
       borderCollapse: "collapse",
@@ -707,7 +768,7 @@ export default function App() {
         <div style={{ ...S.card, maxWidth: 380, width: "100%", textAlign: "center" }}>
           <div style={{ fontSize: 48, marginBottom: 8 }}>📊</div>
           <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 4 }}>Intranet Negocios</h2>
-          <p style={{ color: t.textoSuave, marginBottom: 24, fontSize: 14 }}>Control de ingresos</p>
+          <p style={{ color: t.textoSuave, marginBottom: 24, fontSize: 14 }}>Control de ingresos y caja</p>
           <input
             style={S.input}
             placeholder="Usuario"
@@ -742,13 +803,131 @@ export default function App() {
           >
             Entrar →
           </button>
-          <p style={{ fontSize: 11, color: t.textoSuave, marginTop: 8 }}>
-            {window.matchMedia("(display-mode: standalone)").matches ? "✅ Modo app activo" : "💡 Instalá esta página como app desde el menú del navegador"}
-          </p>
         </div>
       </div>
     );
   }
+
+  // Helper para obtener registros de un mes/año
+  const obtenerRegistrosMesAnio = (mesAnioStr, negocioSel) => {
+    if (!mesAnioStr || !mesAnioStr.includes("-")) return [];
+    const [anio, mes] = mesAnioStr.split("-").map(Number);
+    return registros.filter(r => {
+      const [d, m, a] = r.fecha.split("/").map(Number);
+      const matchNeg = !negocioSel || negocioSel === "todos" || r.negocio === negocioSel;
+      return m === mes && a === anio && matchNeg;
+    }).sort((a, b) => {
+      const [da] = a.fecha.split("/").map(Number);
+      const [db2] = b.fecha.split("/").map(Number);
+      return db2 - da; // Más reciente primero
+    });
+  };
+
+  // Helper para evolución anual por mes
+  const calcularEvolucionAnual = (anio, negSel) => {
+    const totalesMes = Array(12).fill(0);
+    registros.forEach(r => {
+      const [d, m, a] = r.fecha.split("/").map(Number);
+      if (a === Number(anio)) {
+        if (!negSel || negSel === "todos" || r.negocio === negSel) {
+          totalesMes[m - 1] += parseInt(r.totalDia || 0);
+        }
+      }
+    });
+    return totalesMes;
+  };
+
+  // Helper para gráfico diario de un mes
+  const calcularFacturacionDiariaDelMes = (mesAnioStr, negSel) => {
+    if (!mesAnioStr || !mesAnioStr.includes("-")) return { labels: [], datasets: [] };
+    const [anio, mes] = mesAnioStr.split("-").map(Number);
+    const diasEnMes = new Date(anio, mes, 0).getDate();
+    const labels = Array.from({ length: diasEnMes }, (_, i) => `${i + 1}`);
+
+    const negociosAMostrar = negSel && negSel !== "todos" ? [negSel] : negociosPermitidos;
+
+    const datasets = negociosAMostrar.map((neg, idx) => {
+      const datosDia = Array(diasEnMes).fill(0);
+      registros.forEach(r => {
+        const [d, m, a] = r.fecha.split("/").map(Number);
+        if (m === mes && a === anio && r.negocio === neg) {
+          datosDia[d - 1] += parseInt(r.totalDia || 0);
+        }
+      });
+      return {
+        label: neg,
+        data: datosDia,
+        borderColor: colores[idx % colores.length],
+        backgroundColor: colores[idx % colores.length] + "33",
+        fill: false,
+        tension: 0.2,
+        borderWidth: 2,
+        pointRadius: 3,
+      };
+    });
+
+    return { labels, datasets };
+  };
+
+  // Helper para días de la semana
+  const calcularPromedioPorDiaSemana = (mesAnioStr, negSel) => {
+    const totalesSemana = Array(7).fill(0);
+    const conteoSemana = Array(7).fill(0);
+
+    const [anio, mes] = mesAnioStr ? mesAnioStr.split("-").map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+
+    registros.forEach(r => {
+      const [d, m, a] = r.fecha.split("/").map(Number);
+      if (m === mes && a === anio) {
+        if (!negSel || negSel === "todos" || r.negocio === negSel) {
+          const fechaObj = new Date(a, m - 1, d);
+          const diaSemana = fechaObj.getDay(); // 0: Dom, 1: Lun...
+          totalesSemana[diaSemana] += parseInt(r.totalDia || 0);
+          conteoSemana[diaSemana] += 1;
+        }
+      }
+    });
+
+    return DIAS_SEMANA.map((nombreDia, idx) => ({
+      dia: nombreDia,
+      total: totalesSemana[idx],
+      promedio: conteoSemana[idx] > 0 ? Math.round(totalesSemana[idx] / conteoSemana[idx]) : 0,
+      dias: conteoSemana[idx]
+    }));
+  };
+
+  // Helper para consolidado por Banco / Caja / Medio de Pago
+  const calcularConsolidadoBancosCajas = (mesAnioStr) => {
+    const [anio, mes] = mesAnioStr ? mesAnioStr.split("-").map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+    const consolidado = {
+      "Mercado Pago": 0,
+      "Efectivo": 0,
+      "Cuentas Bancarias / TB": 0,
+      "Tarjetas / Otros": 0
+    };
+
+    registros.forEach(r => {
+      const [d, m, a] = r.fecha.split("/").map(Number);
+      if (m === mes && a === anio) {
+        mediosTodos.forEach(medio => {
+          const val = parseInt(r[medio] || 0, 10);
+          if (val > 0) {
+            if (medio.includes("MP") || medio.includes("Mercado")) {
+              consolidado["Mercado Pago"] += val;
+            } else if (medio.includes("Efectivo")) {
+              consolidado["Efectivo"] += val;
+            } else if (medio.includes("TB") || medio.includes("BNA") || medio.includes("BLP")) {
+              consolidado["Cuentas Bancarias / TB"] += val;
+            } else {
+              consolidado["Tarjetas / Otros"] += val;
+            }
+          }
+        });
+      }
+    });
+
+    return consolidado;
+  };
 
   // ─── App principal ────────────────────────────────────────────────────────
   return (
@@ -757,19 +936,19 @@ export default function App() {
       {/* ── Header ── */}
       <div style={{ ...S.pageHeader, backgroundColor: t.superficie, borderBottom: `1px solid ${t.borde}` }}>
         <div>
-          <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>📊 Intranet</h1>
+          <h1 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>📊 Intranet Negocios</h1>
           <p style={{ fontSize: 12, color: t.textoSuave, margin: 0 }}>
-            {seccionActiva === "dashboard" && "Resumen"}
-            {seccionActiva === "carga" && "Carga de datos"}
-            {seccionActiva === "informes" && "Informes"}
-            {seccionActiva === "editar" && "Editar registros"}
+            {seccionActiva === "dashboard" && "Resumen General"}
+            {seccionActiva === "carga" && "Carga de Datos"}
+            {seccionActiva === "editar" && "Edición Histórica y PDF"}
+            {seccionActiva === "evolucion" && "Evolución Anual"}
+            {seccionActiva === "informes" && "Análisis Diario y Semanal"}
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* Toggle modo oscuro */}
           <button
             onClick={() => setModoOscuro(!modoOscuro)}
-            style={{ ...S.btnSecondary, padding: "8px 12px", fontSize: 18 }}
+            style={{ ...S.btnSecondary, padding: "8px 12px", fontSize: 16 }}
             title="Cambiar tema"
           >
             {modoOscuro ? "☀️" : "🌙"}
@@ -783,56 +962,38 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ padding: "16px 16px 0" }}>
+      <div style={{ padding: "16px 16px 120px" }}>
 
         {/* ══════════════════════════════════════════════
-            SECCIÓN: DASHBOARD
+            SECCIÓN 1: DASHBOARD / INICIO
         ══════════════════════════════════════════════ */}
         {seccionActiva === "dashboard" && (
           <div>
-            {/* Resumen mes actual */}
             <div style={S.card}>
-              <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Mes actual
+              <h3 style={{ margin: "0 0 12px", fontSize: 13, color: t.textoSuave, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                Mes Actual ({NOMBRES_MESES[new Date().getMonth()]} {new Date().getFullYear()})
               </h3>
               <div style={S.totalGrande}>
                 {formatoMoneda(negociosPermitidos.reduce((acc, n) => acc + parseInt(totalesMesActual[n] || 0), 0))}
               </div>
-              <p style={{ color: t.textoSuave, fontSize: 13, margin: "4px 0 16px" }}>Total general</p>
+              <p style={{ color: t.textoSuave, fontSize: 13, margin: "4px 0 16px" }}>Total general facturado</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                 {negociosPermitidos.map(neg => (
                   totalesMesActual[neg] ? (
                     <div key={neg} style={{ backgroundColor: t.superficie2, borderRadius: 10, padding: "10px 12px" }}>
                       <p style={{ fontSize: 12, color: t.textoSuave, margin: "0 0 2px" }}>{neg}</p>
-                      <p style={{ fontSize: 16, fontWeight: 700, margin: 0, color: t.texto }}>{formatoMoneda(totalesMesActual[neg])}</p>
+                      <p style={{ fontSize: 15, fontWeight: 700, margin: 0, color: t.texto }}>{formatoMoneda(totalesMesActual[neg])}</p>
                     </div>
                   ) : null
                 ))}
               </div>
             </div>
 
-            {/* Acumulado año — solo admin */}
-            {rolActual === "admin" && (
-            <div style={S.card}>
-              <h3 style={{ margin: "0 0 8px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Acumulado del año
-              </h3>
-              <div style={S.totalGrande}>
-                {formatoMoneda(
-                  registros.filter(r => {
-                    const [d, m, y] = r.fecha.split("/").map(Number);
-                    return new Date(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`) >= new Date(new Date().getFullYear(), 0, 1);
-                  }).reduce((acc, r) => acc + parseInt(r.totalDia || 0), 0)
-                )}
-              </div>
-            </div>
-            )}
-
-            {/* Medios de pago del mes — solo admin */}
+            {/* Medios de pago del mes */}
             {rolActual === "admin" && acumuladosPorMedioMes.length > 0 && (
               <div style={S.card}>
-                <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                  💳 Medios de pago del mes
+                <h3 style={{ margin: "0 0 12px", fontSize: 13, color: t.textoSuave, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  💳 Recaudación por Medio de Pago (Mes Actual)
                 </h3>
                 {[...acumuladosPorMedioMes].sort((a, b) => b.total - a.total).map(({ medio, total }) => (
                   <div key={medio} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${t.borde}` }}>
@@ -843,37 +1004,16 @@ export default function App() {
               </div>
             )}
 
-            {/* Gráfico evolución — solo admin */}
-            {rolActual === "admin" && <div style={S.card}>
-              <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase" }}>
-                📈 Evolución del mes
-              </h3>
-              <div style={{ overflowX: "auto" }}>
-                <Line
-                  data={generarEvolucionDiariaAcumulada()}
-                  options={{
-                    responsive: true,
-                    plugins: { legend: { position: "bottom", labels: { color: t.texto, font: { size: 11 } } }, tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatoMoneda(ctx.raw)}` } } },
-                    scales: {
-                      y: { ticks: { callback: v => "$" + v.toLocaleString("es-AR"), color: t.textoSuave }, grid: { color: t.borde } },
-                      x: { ticks: { autoSkip: true, maxTicksLimit: 10, color: t.textoSuave }, grid: { color: t.borde } }
-                    }
-                  }}
-                />
-              </div>
-            </div>
-            }
-
             {/* Último registro por negocio */}
             <div style={S.card}>
-              <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase" }}>
-                📅 Último registro por negocio
+              <h3 style={{ margin: "0 0 12px", fontSize: 13, color: t.textoSuave, fontWeight: 700, textTransform: "uppercase" }}>
+                📅 Estado de Carga por Negocio
               </h3>
-              {negociosPermitidos.map((neg, i) => (
+              {negociosPermitidos.map((neg) => (
                 <div key={neg} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${t.borde}` }}>
-                  <span style={{ fontSize: 14 }}>{neg}</span>
-                  <span style={{ fontSize: 13, color: ultimosDiasPorNegocio[neg] ? t.exito : t.peligro, fontWeight: 600 }}>
-                    {ultimosDiasPorNegocio[neg] || "Sin datos"}
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>{neg}</span>
+                  <span style={{ fontSize: 13, color: ultimosDiasPorNegocio[neg] ? t.exito : t.peligro, fontWeight: 700 }}>
+                    {ultimosDiasPorNegocio[neg] ? `Última: ${ultimosDiasPorNegocio[neg]}` : "Sin datos"}
                   </span>
                 </div>
               ))}
@@ -882,23 +1022,16 @@ export default function App() {
         )}
 
         {/* ══════════════════════════════════════════════
-            SECCIÓN: CARGA
+            SECCIÓN 2: CARGA DE DATOS
         ══════════════════════════════════════════════ */}
         {seccionActiva === "carga" && (
           <div>
-            {/* Botones rápidos */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
               <button style={{ ...S.btnPrimary, margin: 0 }} onClick={() => { setMostrarCargaDia(true); setTimeout(() => document.getElementById("seccion-cargar-dia")?.scrollIntoView({ behavior: "smooth" }), 100); }}>
                 📅 Cargar día
               </button>
               <button style={{ ...S.btnPrimary, margin: 0, backgroundColor: t.warning }} onClick={() => { setMostrarAcumulados(true); setTimeout(() => document.getElementById("seccion-filtros")?.scrollIntoView({ behavior: "smooth" }), 100); }}>
-                🔍 Filtrar
-              </button>
-              <button style={{ ...S.btnPrimary, margin: 0, backgroundColor: t.superficie2, color: t.texto, border: `1px solid ${t.borde}` }} onClick={() => document.getElementById("registros-individuales")?.scrollIntoView({ behavior: "smooth" })}>
-                📋 Registros
-              </button>
-              <button style={{ ...S.btnPrimary, margin: 0, backgroundColor: "#1a7a4a" }} onClick={exportarTablaAExcel}>
-                📤 Excel
+                🔍 Filtros
               </button>
             </div>
 
@@ -906,13 +1039,13 @@ export default function App() {
             {mostrarCargaDia && (
               <div id="seccion-cargar-dia" style={S.card}>
                 <h3 style={{ ...S.sectionTitle, marginBottom: 16 }}>
-                  {modoEdicion ? "✏️ Editando registro" : "📅 Cargar día"}
+                  {modoEdicion ? "✏️ Editando Registro" : "📅 Registrar Ingresos del Día"}
                 </h3>
 
                 {modoEdicion && (
                   <div style={{ backgroundColor: t.warning + "22", border: `1px solid ${t.warning}`, borderRadius: 10, padding: "10px 14px", marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontSize: 13, color: t.texto }}>
-                      <strong>Editando:</strong> {fechaSeleccionada && new Date(fechaSeleccionada + "T12:00:00").toLocaleDateString("es-AR")} — {negocio}
+                      <strong>Editando:</strong> {fechaSeleccionada} — {negocio}
                     </span>
                     <button
                       style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: t.peligro }}
@@ -955,7 +1088,6 @@ export default function App() {
                         }
                       }}
                     />
-                    {errors[medio] && <p style={{ color: t.peligro, fontSize: 12, margin: "-8px 0 8px" }}>Solo números</p>}
                   </div>
                 ))}
 
@@ -976,15 +1108,14 @@ export default function App() {
                       if (!fechaSeleccionada) { alert("Seleccioná una fecha primero."); return; }
                       const [anio, mes, dia] = fechaSeleccionada.split("-");
                       const fechaFormateada = `${dia}/${mes}/${anio}`;
-                      const duplicado = registros.find(r => r.fecha === fechaFormateada && r.negocio === negocio);
                       const totalDia = Object.entries(formData).reduce((sum, [, val]) => sum + parseInt(val || 0), 0);
                       await addDoc(collection(db, "registros"), { fecha: fechaFormateada, negocio, totalDia, ...formData });
                       setFormData({}); setNegocio(""); setFechaSeleccionada("");
                       cargarRegistros();
-                      alert("✅ Registro guardado");
+                      alert("✅ Registro guardado con éxito");
                     }}
                   >
-                    ✅ Guardar
+                    ✅ Guardar Ingreso
                   </button>
                 )}
 
@@ -999,13 +1130,11 @@ export default function App() {
                         const totalDia = Object.entries(formData).reduce((sum, [, val]) => sum + parseInt(val || 0), 0);
                         try {
                           await updateDoc(doc(db, "registros", idEnEdicion), { fecha: fechaFormateada, negocio, totalDia, ...formData });
-                          alert("✅ Registro actualizado");
+                          alert("✅ Registro actualizado con éxito");
                           setFormData({}); setNegocio(""); setFechaSeleccionada(""); setModoEdicion(false); setIdEnEdicion(null);
                           cargarRegistros();
-                          // Si vino del buscador, actualizar resultados
-                          if (resultadosBusqueda.length > 0) buscarParaEditar();
                         } catch (err) {
-                          alert("❌ Error al actualizar."); console.error(err);
+                          alert("❌ Error al actualizar.");
                         }
                       }}
                     >
@@ -1024,7 +1153,7 @@ export default function App() {
 
             {/* Registros del mes actual */}
             <div id="registros-individuales">
-              <h3 style={{ ...S.sectionTitle }}>📋 Mes actual</h3>
+              <h3 style={{ ...S.sectionTitle }}>📋 Registros del Mes Actual</h3>
               {negociosPermitidos.map(negAg => {
                 const regsNeg = registrosOrdenados().filter(r => r.negocio === negAg);
                 if (regsNeg.length === 0) return null;
@@ -1036,7 +1165,7 @@ export default function App() {
                     >
                       <div>
                         <span style={{ fontWeight: 700, fontSize: 15 }}>{negAg}</span>
-                        <span style={{ marginLeft: 10, fontSize: 13, color: t.textoSuave }}>{regsNeg.length} registros</span>
+                        <span style={{ marginLeft: 10, fontSize: 13, color: t.textoSuave }}>{regsNeg.length} cargas</span>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <span style={{ fontWeight: 700, color: t.acento, fontSize: 15 }}>
@@ -1047,14 +1176,14 @@ export default function App() {
                     </div>
 
                     {negociosExpandido[negAg] && (
-                      <div style={{ overflowX: "auto", marginTop: 2 }}>
+                      <div style={{ overflowX: "auto", marginTop: 4 }}>
                         <table style={S.tabla}>
                           <thead>
                             <tr>
                               <th style={S.th}>Fecha</th>
                               {mediosPorNegocio[negAg].map(m => <th key={m} style={S.th}>{m}</th>)}
                               <th style={S.th}>Total</th>
-                              <th style={S.th}>Acc.</th>
+                              <th style={S.th}>Acción</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -1083,242 +1212,371 @@ export default function App() {
                 );
               })}
             </div>
-
-            {/* Filtros avanzados */}
-            {mostrarAcumulados && (
-              <div id="seccion-filtros" style={S.card}>
-                <h3 style={S.sectionTitle}>🔍 Filtros avanzados</h3>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-                  <div>
-                    <label style={S.label}>Desde</label>
-                    <input type="date" style={{ ...S.input, marginBottom: 0 }} value={filtroFechaDesde} onChange={e => setFiltroFechaDesde(e.target.value)} />
-                  </div>
-                  <div>
-                    <label style={S.label}>Hasta</label>
-                    <input type="date" style={{ ...S.input, marginBottom: 0 }} value={filtroFechaHasta} onChange={e => setFiltroFechaHasta(e.target.value)} />
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-                  <button style={S.btnPrimary} onClick={() => {
-                    const ahora = new Date();
-                    setFiltroFechaDesde(new Date(ahora.getFullYear(), ahora.getMonth(), 1).toISOString().split("T")[0]);
-                    setFiltroFechaHasta(new Date(ahora.getFullYear(), ahora.getMonth() + 1, 0).toISOString().split("T")[0]);
-                    calcularAcumulados(); calcularDetalleDiarioFiltrado();
-                  }}>Este mes</button>
-                  <button style={S.btnPrimary} onClick={() => {
-                    const hoy = new Date().toISOString().split("T")[0];
-                    setFiltroFechaDesde(hoy); setFiltroFechaHasta(hoy);
-                    calcularAcumulados();
-                  }}>Hoy</button>
-                  <button style={S.btnSecondary} onClick={() => {
-                    setFiltroFechaDesde(""); setFiltroFechaHasta(""); setFiltroNegociosMulti([]); setFiltroMediosMulti([]); setAcumulados([]);
-                  }}>Limpiar</button>
-                </div>
-
-                <label style={S.label}>Negocios</label>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-                  {Object.keys(mediosPorNegocio).map(n => (
-                    <label key={n} style={{ display: "flex", alignItems: "center", gap: 6, backgroundColor: filtroNegociosMulti.includes(n) ? t.acento + "22" : t.superficie2, padding: "8px 12px", borderRadius: 8, cursor: "pointer", border: `1px solid ${filtroNegociosMulti.includes(n) ? t.acento : t.borde}` }}>
-                      <input type="checkbox" checked={filtroNegociosMulti.includes(n)} onChange={e => setFiltroNegociosMulti(e.target.checked ? [...filtroNegociosMulti, n] : filtroNegociosMulti.filter(x => x !== n))} style={{ width: 16, height: 16 }} />
-                      <span style={{ fontSize: 13, color: filtroNegociosMulti.includes(n) ? t.acento : t.texto }}>{n}</span>
-                    </label>
-                  ))}
-                </div>
-
-                <button style={S.btnPrimary} onClick={() => { calcularAcumulados(); calcularDetalleDiarioFiltrado(); }}>
-                  Aplicar filtros
-                </button>
-
-                {calcularIndicadores() && (
-                  <div style={{ backgroundColor: t.superficie2, borderRadius: 12, padding: 16, marginTop: 12 }}>
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      {[
-                        { label: "Total", valor: formatoMoneda(calcularIndicadores().totalGeneral) },
-                        { label: "Promedio/día", valor: formatoMoneda(calcularIndicadores().promedio.toFixed(0)) },
-                        { label: "Días con datos", valor: calcularIndicadores().cantidadDias },
-                        { label: "Registros", valor: calcularIndicadores().cantidadRegistros }
-                      ].map(({ label, valor }) => (
-                        <div key={label}>
-                          <p style={{ fontSize: 11, color: t.textoSuave, margin: "0 0 2px", textTransform: "uppercase" }}>{label}</p>
-                          <p style={{ fontSize: 18, fontWeight: 800, margin: 0, color: t.texto }}>{valor}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {acumulados.length > 0 && (
-                  <div style={{ overflowX: "auto", marginTop: 16 }}>
-                    <table style={S.tabla}>
-                      <thead><tr><th style={S.th}>Negocio</th><th style={S.th}>Medio</th><th style={{ ...S.th, textAlign: "right" }}>Total</th></tr></thead>
-                      <tbody>
-                        {acumulados.map((r, i) => (
-                          <tr key={i}><td style={S.td(i % 2 === 0)}>{r.negocio}</td><td style={S.td(i % 2 === 0)}>{r.medio}</td><td style={{ ...S.td(i % 2 === 0), textAlign: "right", fontWeight: 600 }}>{formatoMoneda(r.total)}</td></tr>
-                        ))}
-                        <tr><td colSpan={2} style={{ ...S.td(false), fontWeight: 700 }}>TOTAL</td><td style={{ ...S.td(false), textAlign: "right", fontWeight: 800, color: t.acento }}>{formatoMoneda(acumulados.reduce((acc, r) => acc + r.total, 0))}</td></tr>
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
           </div>
         )}
 
         {/* ══════════════════════════════════════════════
-            SECCIÓN: EDITAR MESES ANTERIORES (solo admin)
+            SECCIÓN 3: EDICIÓN HISTÓRICA Y EXPORTACIÓN PDF
         ══════════════════════════════════════════════ */}
         {seccionActiva === "editar" && (
           <div>
-            {rolActual !== "admin" ? (
-              <div style={{ ...S.card, textAlign: "center", padding: 40 }}>
-                <p style={{ fontSize: 40, marginBottom: 8 }}>🔒</p>
-                <p style={{ color: t.textoSuave }}>Solo los administradores pueden editar registros de meses anteriores.</p>
-              </div>
-            ) : (
-              <div>
-                <div style={S.card}>
-                  <h3 style={S.sectionTitle}>🔍 Buscar registro para editar</h3>
-                  <p style={{ fontSize: 13, color: t.textoSuave, marginBottom: 16 }}>
-                    Buscá por mes (ej: 2025-03) y/o nombre del negocio
-                  </p>
-                  <div>
-                    <label style={S.label}>Mes</label>
-                    <input
-                      type="month"
-                      style={S.input}
-                      value={buscarFechaEdicion}
-                      onChange={e => setBuscarFechaEdicion(e.target.value)}
-                      placeholder="2025-01"
-                    />
-                  </div>
-                  <div>
-                    <label style={S.label}>Negocio (opcional)</label>
-                    <select style={S.select} value={buscarNegocioEdicion} onChange={e => setBuscarNegocioEdicion(e.target.value)}>
-                      <option value="">Todos los negocios</option>
-                      {negocios.map(n => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  </div>
-                  <button style={S.btnPrimary} onClick={buscarParaEditar}>
-                    🔍 Buscar registros
-                  </button>
+            <div style={S.card}>
+              <h3 style={S.sectionTitle}>📅 Consulta y Edición Histórica de Meses Anteriores</h3>
+              <p style={{ fontSize: 13, color: t.textoSuave, marginBottom: 16 }}>
+                Seleccioná el Mes/Año y el Negocio para revisar todas las cargas diarias, modificar importes erróneos o generar el reporte en PDF.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={S.label}>Mes / Año</label>
+                  <input
+                    type="month"
+                    style={S.input}
+                    value={buscarMesAnioEdicion}
+                    onChange={e => setBuscarMesAnioEdicion(e.target.value)}
+                  />
                 </div>
-
-                {resultadosBusqueda.length > 0 && (
-                  <div style={S.card}>
-                    <h3 style={{ ...S.sectionTitle, fontSize: 16 }}>
-                      {resultadosBusqueda.length} resultado{resultadosBusqueda.length !== 1 ? "s" : ""}
-                    </h3>
-                    {resultadosBusqueda.map((r, i) => (
-                      <div key={r.id} style={{ backgroundColor: t.superficie2, borderRadius: 12, padding: "12px 16px", marginBottom: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <p style={{ fontWeight: 700, fontSize: 15, margin: "0 0 2px" }}>{r.negocio}</p>
-                          <p style={{ fontSize: 13, color: t.textoSuave, margin: 0 }}>{r.fecha} — {formatoMoneda(r.totalDia)}</p>
-                        </div>
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <button
-                            style={S.btnEdit}
-                            onClick={() => {
-                              editarRegistroPorId(r.id);
-                            }}
-                          >
-                            ✏️ Editar
-                          </button>
-                          <button style={S.btnDanger} onClick={() => eliminarRegistro(r.id)}>
-                            🗑
-                          </button>
-                        </div>
-                      </div>
+                <div>
+                  <label style={S.label}>Empresa / Negocio</label>
+                  <select
+                    style={S.select}
+                    value={buscarNegocioEdicion}
+                    onChange={e => setBuscarNegocioEdicion(e.target.value)}
+                  >
+                    <option value="todos">Todos los negocios</option>
+                    {negociosPermitidos.map(n => (
+                      <option key={n} value={n}>{n}</option>
                     ))}
-                  </div>
-                )}
-
-                {resultadosBusqueda.length === 0 && buscarFechaEdicion && (
-                  <div style={{ ...S.card, textAlign: "center", color: t.textoSuave }}>
-                    <p>No se encontraron registros para los filtros seleccionados.</p>
-                  </div>
-                )}
+                  </select>
+                </div>
               </div>
-            )}
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 4 }}>
+                <button
+                  style={{ ...S.btnPrimary, backgroundColor: "#dc2626", margin: 0 }}
+                  onClick={() => exportarPdfEmpresa(buscarNegocioEdicion, buscarMesAnioEdicion)}
+                >
+                  📄 Exportar a PDF
+                </button>
+                <button
+                  style={{ ...S.btnPrimary, backgroundColor: "#16a34a", margin: 0 }}
+                  onClick={exportarTablaAExcel}
+                >
+                  📤 Exportar Excel
+                </button>
+              </div>
+            </div>
+
+            {/* Listado completo de cargas del mes seleccionado */}
+            {(() => {
+              const registrosDelMes = obtenerRegistrosMesAnio(buscarMesAnioEdicion, buscarNegocioEdicion);
+              const totalMesConsolidado = registrosDelMes.reduce((acc, r) => acc + parseInt(r.totalDia || 0), 0);
+
+              return (
+                <div style={S.card}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800 }}>
+                      📋 Listado de Cargas ({registrosDelMes.length} registros)
+                    </h3>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: t.acento }}>
+                      Total: {formatoMoneda(totalMesConsolidado)}
+                    </span>
+                  </div>
+
+                  {registrosDelMes.length === 0 ? (
+                    <p style={{ textAlign: "center", color: t.textoSuave, padding: "20px 0" }}>
+                      No hay datos registrados para el mes y negocio seleccionado.
+                    </p>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={S.tabla}>
+                        <thead>
+                          <tr>
+                            <th style={S.th}>Fecha</th>
+                            <th style={S.th}>Negocio</th>
+                            {buscarNegocioEdicion !== "todos" && mediosPorNegocio[buscarNegocioEdicion]
+                              ? mediosPorNegocio[buscarNegocioEdicion].map(m => <th key={m} style={S.th}>{m}</th>)
+                              : mediosTodos.map(m => <th key={m} style={S.th}>{m}</th>)
+                            }
+                            <th style={S.th}>Total Día</th>
+                            <th style={S.th}>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {registrosDelMes.map((r, i) => (
+                            <tr key={r.id}>
+                              <td style={S.td(i % 2 === 0)}>{r.fecha}</td>
+                              <td style={{ ...S.td(i % 2 === 0), fontWeight: 700 }}>{r.negocio}</td>
+                              {(buscarNegocioEdicion !== "todos" && mediosPorNegocio[buscarNegocioEdicion]
+                                ? mediosPorNegocio[buscarNegocioEdicion]
+                                : mediosTodos
+                              ).map(m => (
+                                <td key={m} style={{ ...S.td(i % 2 === 0), textAlign: "right" }}>
+                                  {r[m] ? formatoMoneda(r[m]) : "-"}
+                                </td>
+                              ))}
+                              <td style={{ ...S.td(i % 2 === 0), textAlign: "right", fontWeight: 800, color: t.exito }}>
+                                {formatoMoneda(r.totalDia)}
+                              </td>
+                              <td style={{ ...S.td(i % 2 === 0), textAlign: "center" }}>
+                                <button style={S.btnEdit} onClick={() => editarRegistroPorId(r.id)}>✏️ Editar</button>
+                                <button style={S.btnDanger} onClick={() => eliminarRegistro(r.id)}>🗑 Eliminar</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 
         {/* ══════════════════════════════════════════════
-            SECCIÓN: INFORMES
+            SECCIÓN 4: EVOLUCIÓN ANUAL POR NEGOCIO
         ══════════════════════════════════════════════ */}
-        {seccionActiva === "informes" && (
+        {seccionActiva === "evolucion" && (
           <div>
             <div style={S.card}>
-              <h3 style={S.sectionTitle}>📊 Informes mensuales</h3>
-              <label style={S.label}>Mes</label>
-              <input type="month" style={S.input} value={mesSelecionado} onChange={e => setMesSelecionado(e.target.value)} />
-              <button style={S.btnPrimary} onClick={filtrarInformesPorMes}>Ver informe</button>
-            </div>
+              <h3 style={S.sectionTitle}>📈 Evolución Anual de Ingresos</h3>
+              <p style={{ fontSize: 13, color: t.textoSuave, marginBottom: 16 }}>
+                Evaluá la tendencia de facturación mes a mes durante todo el año para cada empresa o el consolidado global.
+              </p>
 
-            {registrosFiltradosInforme.length > 0 && (
-              <div>
-                <div style={S.card}>
-                  <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase" }}>💰 Acumulado del mes</h3>
-                  {Object.entries(
-                    registrosFiltradosInforme.reduce((acc, r) => {
-                      if (!acc[r.negocio]) acc[r.negocio] = 0;
-                      acc[r.negocio] += parseInt(r.totalDia || 0);
-                      return acc;
-                    }, {})
-                  ).sort((a, b) => b[1] - a[1]).map(([neg, total]) => (
-                    <div key={neg} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${t.borde}` }}>
-                      <span style={{ fontSize: 15 }}>{neg}</span>
-                      <span style={{ fontWeight: 700, color: t.acento }}>{formatoMoneda(total)}</span>
-                    </div>
-                  ))}
-                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 0 0", fontWeight: 800, fontSize: 16 }}>
-                    <span>TOTAL</span>
-                    <span style={{ color: t.exito }}>{formatoMoneda(registrosFiltradosInforme.reduce((acc, r) => acc + parseInt(r.totalDia || 0), 0))}</span>
-                  </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={S.label}>Año</label>
+                  <select style={S.select} value={anioEvolucion} onChange={e => setAnioEvolucion(e.target.value)}>
+                    {[2024, 2025, 2026, 2027].map(a => (
+                      <option key={a} value={a}>{a}</option>
+                    ))}
+                  </select>
                 </div>
-
-                <div style={S.card}>
-                  <h3 style={{ margin: "0 0 12px", fontSize: 14, color: t.textoSuave, fontWeight: 600, textTransform: "uppercase" }}>📈 Evolución acumulada</h3>
-                  <Line
-                    data={(() => {
-                      const ahora = new Date(mesSelecionado + "-01");
-                      const anio = ahora.getFullYear();
-                      const mes = ahora.getMonth();
-                      const dias = new Date(anio, mes + 1, 0).getDate();
-                      const labels = Array.from({ length: dias }, (_, i) => `${String(i + 1).padStart(2, "0")}/${String(mes + 1).padStart(2, "0")}/${anio}`);
-                      const datos = {};
-                      negocios.forEach(n => datos[n] = Array(dias).fill(0));
-                      registrosFiltradosInforme.forEach(r => {
-                        const [d] = r.fecha.split("/").map(Number);
-                        if (datos[r.negocio]) {
-                          datos[r.negocio][d - 1] += mediosTodos.reduce((sum, m) => sum + parseInt(r[m] || 0), 0);
-                        }
-                      });
-                      negocios.forEach(n => { for (let i = 1; i < dias; i++) datos[n][i] += datos[n][i - 1]; });
-                      return { labels, datasets: negocios.map((n, i) => ({ label: n, data: datos[n], borderColor: colores[i % colores.length], backgroundColor: colores[i % colores.length], fill: false, tension: 0.3, borderWidth: 2, pointRadius: 3 })) };
-                    })()}
-                    options={{ responsive: true, plugins: { legend: { position: "bottom", labels: { color: t.texto, font: { size: 11 } } } }, scales: { y: { ticks: { callback: v => "$" + v.toLocaleString("es-AR"), color: t.textoSuave }, grid: { color: t.borde } }, x: { ticks: { autoSkip: true, maxTicksLimit: 10, color: t.textoSuave }, grid: { color: t.borde } } } }}
-                  />
+                <div>
+                  <label style={S.label}>Negocio</label>
+                  <select style={S.select} value={negocioEvolucion} onChange={e => setNegocioEvolucion(e.target.value)}>
+                    <option value="todos">Todos los negocios</option>
+                    {negociosPermitidos.map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
-            )}
+
+              {/* Métricas Anuales */}
+              {(() => {
+                const totales = calcularEvolucionAnual(anioEvolucion, negocioEvolucion);
+                const sumaAnual = totales.reduce((a, b) => a + b, 0);
+                const mesesConDatos = totales.filter(t => t > 0).length;
+                const promedioMensual = mesesConDatos > 0 ? Math.round(sumaAnual / mesesConDatos) : 0;
+
+                return (
+                  <div style={{ backgroundColor: t.superficie2, borderRadius: 12, padding: 16, margin: "10px 0 16px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <div>
+                        <p style={{ fontSize: 11, color: t.textoSuave, margin: 0, textTransform: "uppercase" }}>Total Acumulado Año {anioEvolucion}</p>
+                        <p style={{ fontSize: 20, fontWeight: 800, color: t.acento, margin: "4px 0 0" }}>{formatoMoneda(sumaAnual)}</p>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: 11, color: t.textoSuave, margin: 0, textTransform: "uppercase" }}>Promedio Mensual</p>
+                        <p style={{ fontSize: 20, fontWeight: 800, color: t.exito, margin: "4px 0 0" }}>{formatoMoneda(promedioMensual)}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Gráfico de Barras Anual */}
+              <div style={{ overflowX: "auto", marginTop: 10 }}>
+                <Bar
+                  data={{
+                    labels: NOMBRES_MESES,
+                    datasets: [
+                      {
+                        label: `Facturación ${negocioEvolucion === "todos" ? "Total" : negocioEvolucion} ($)`,
+                        data: calcularEvolucionAnual(anioEvolucion, negocioEvolucion),
+                        backgroundColor: t.acento,
+                        borderRadius: 6,
+                      }
+                    ]
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: { display: false },
+                      tooltip: { callbacks: { label: ctx => `Facturado: ${formatoMoneda(ctx.raw)}` } }
+                    },
+                    scales: {
+                      y: { ticks: { callback: v => "$" + v.toLocaleString("es-AR"), color: t.textoSuave }, grid: { color: t.borde } },
+                      x: { ticks: { color: t.textoSuave }, grid: { color: t.borde } }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Tabla Numérica Anual Mes a Mes */}
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 12px", fontSize: 15, fontWeight: 800 }}>
+                📊 Detalle Mensual ({anioEvolucion})
+              </h3>
+              <div style={{ overflowX: "auto" }}>
+                <table style={S.tabla}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Mes</th>
+                      <th style={{ ...S.th, textAlign: "right" }}>Facturación ($)</th>
+                      <th style={{ ...S.th, textAlign: "right" }}>% del Total Anual</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const totales = calcularEvolucionAnual(anioEvolucion, negocioEvolucion);
+                      const sumaAnual = totales.reduce((a, b) => a + b, 0);
+
+                      return NOMBRES_MESES.map((nombreMes, i) => {
+                        const totalM = totales[i];
+                        const pct = sumaAnual > 0 ? ((totalM / sumaAnual) * 100).toFixed(1) : "0.0";
+                        return (
+                          <tr key={nombreMes}>
+                            <td style={{ ...S.td(i % 2 === 0), fontWeight: 700 }}>{nombreMes}</td>
+                            <td style={{ ...S.td(i % 2 === 0), textAlign: "right", fontWeight: 700, color: totalM > 0 ? t.texto : t.textoSuave }}>
+                              {formatoMoneda(totalM)}
+                            </td>
+                            <td style={{ ...S.td(i % 2 === 0), textAlign: "right", color: t.acento, fontWeight: 600 }}>
+                              {pct}%
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
+        {/* ══════════════════════════════════════════════
+            SECCIÓN 5: ANÁLISIS DIARIO, SEMANAL Y CONTROL DE BANCOS
+        ══════════════════════════════════════════════ */}
+        {seccionActiva === "informes" && (
+          <div>
+            {/* 1. Facturación Diaria del Mes (Días 1 al 31) */}
+            <div style={S.card}>
+              <h3 style={S.sectionTitle}>📅 Facturación Diaria a lo Largo del Mes</h3>
+              <p style={{ fontSize: 13, color: t.textoSuave, marginBottom: 14 }}>
+                Visualizá las ventas día a día (días 1 al 31) para detectar picos y días de menor movimiento.
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <div>
+                  <label style={S.label}>Mes / Año</label>
+                  <input type="month" style={S.input} value={mesDiario} onChange={e => setMesDiario(e.target.value)} />
+                </div>
+                <div>
+                  <label style={S.label}>Negocio</label>
+                  <select style={S.select} value={negocioDiario} onChange={e => setNegocioDiario(e.target.value)}>
+                    <option value="todos">Todos los negocios</option>
+                    {negociosPermitidos.map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ overflowX: "auto" }}>
+                <Line
+                  data={calcularFacturacionDiariaDelMes(mesDiario, negocioDiario)}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: { position: "bottom", labels: { color: t.texto, font: { size: 11 } } },
+                      tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${formatoMoneda(ctx.raw)}` } }
+                    },
+                    scales: {
+                      y: { ticks: { callback: v => "$" + v.toLocaleString("es-AR"), color: t.textoSuave }, grid: { color: t.borde } },
+                      x: { title: { display: true, text: "Día del mes", color: t.textoSuave }, ticks: { color: t.textoSuave }, grid: { color: t.borde } }
+                    }
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* 2. Promedio y Ventas por Día de la Semana */}
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 8px", fontSize: 16, fontWeight: 800 }}>
+                📊 Ventas Promedio por Día de la Semana
+              </h3>
+              <p style={{ fontSize: 13, color: t.textoSuave, marginBottom: 14 }}>
+                Conocé qué día de la semana genera mayor facturación promedio para planificar compras y caja.
+              </p>
+
+              <div style={{ overflowX: "auto" }}>
+                <table style={S.tabla}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Día</th>
+                      <th style={{ ...S.th, textAlign: "right" }}>Recaudación Total</th>
+                      <th style={{ ...S.th, textAlign: "right" }}>Promedio / Día</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calcularPromedioPorDiaSemana(mesDiario, negocioDiario).map((row, i) => (
+                      <tr key={row.dia}>
+                        <td style={{ ...S.td(i % 2 === 0), fontWeight: 700 }}>{row.dia}</td>
+                        <td style={{ ...S.td(i % 2 === 0), textAlign: "right" }}>{formatoMoneda(row.total)}</td>
+                        <td style={{ ...S.td(i % 2 === 0), textAlign: "right", fontWeight: 800, color: t.acento }}>
+                          {formatoMoneda(row.promedio)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 3. Consolidado por Caja / Banco / MercadoPago */}
+            <div style={S.card}>
+              <h3 style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 800 }}>
+                🏦 Resumen Consolidado de Cuentas y Cajas
+              </h3>
+              <p style={{ fontSize: 13, color: t.textoSuave, marginBottom: 14 }}>
+                Distribución del dinero ingresado en cuentas bancarias, MercadoPago y Efectivo para conciliación rápida.
+              </p>
+              {(() => {
+                const cons = calcularConsolidadoBancosCajas(mesDiario);
+                return (
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {Object.entries(cons).map(([cuenta, valor]) => (
+                      <div key={cuenta} style={{ backgroundColor: t.superficie2, borderRadius: 12, padding: "12px 14px" }}>
+                        <p style={{ fontSize: 12, color: t.textoSuave, margin: "0 0 2px" }}>{cuenta}</p>
+                        <p style={{ fontSize: 16, fontWeight: 800, margin: 0, color: t.exito }}>{formatoMoneda(valor)}</p>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+
+        <div style={{ height: 80 }} />
       </div>
 
-      {/* ── Barra de navegación inferior (mobile) ── */}
+      {/* ── Barra de navegación inferior (mobile y desktop) ── */}
       <div style={S.navBar}>
         {[
           { id: "dashboard", icon: "🏠", label: "Inicio" },
           { id: "carga", icon: "📅", label: "Carga" },
-          { id: "editar", icon: "✏️", label: "Editar" },
-          { id: "informes", icon: "📊", label: "Informes" },
+          { id: "editar", icon: "✏️", label: "Editar/PDF" },
+          { id: "evolucion", icon: "📈", label: "Anual" },
+          { id: "informes", icon: "📊", label: "Análisis" },
         ].map(({ id, icon, label }) => (
           <button key={id} style={S.navBtn(seccionActiva === id)} onClick={() => setSeccionActiva(id)}>
-            <span style={{ fontSize: 22 }}>{icon}</span>
+            <span style={{ fontSize: 20 }}>{icon}</span>
             <span>{label}</span>
           </button>
         ))}
@@ -1327,3 +1585,4 @@ export default function App() {
     </div>
   );
 }
+
